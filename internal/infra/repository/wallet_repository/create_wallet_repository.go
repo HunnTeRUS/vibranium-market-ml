@@ -1,0 +1,31 @@
+package wallet_repository
+
+import (
+	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"os"
+)
+
+type walletRepository struct {
+	dynamodbConnection *dynamodb.DynamoDB
+}
+
+func NewWalletRepository(dynamodbConnection *dynamodb.DynamoDB) *walletRepository {
+	return &walletRepository{dynamodbConnection}
+}
+
+func (wr *walletRepository) CreateWallet(wallet *wallet.Wallet) error {
+	tableName := os.Getenv("DYNAMODB_WALLETS_TABLE")
+	item, err := dynamodbattribute.MarshalMap(wallet)
+	if err != nil {
+		return err
+	}
+	input := &dynamodb.PutItemInput{
+		TableName: aws.String(tableName),
+		Item:      item,
+	}
+	_, err = wr.dynamodbConnection.PutItem(input)
+	return err
+}
