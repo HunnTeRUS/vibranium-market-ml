@@ -31,6 +31,7 @@ func main() {
 	r := gin.Default()
 
 	r.POST("/orders", orderController.CreateOrder)
+	r.GET("/orders/:id", orderController.GetOrder)
 	r.GET("/wallets/:userId", walletController.GetWallet)
 	r.PATCH("/wallets/deposit", walletController.DepositToWallet)
 	r.POST("/wallets", walletController.CreateWalletController)

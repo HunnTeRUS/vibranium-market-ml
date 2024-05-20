@@ -29,7 +29,8 @@ type OrderOutputDTO struct {
 }
 
 type OrderUsecaseInterface interface {
-	ProcessOrder(orderInput *OrderInputDTO) error
+	ProcessOrder(orderInput *OrderInputDTO) (string, error)
+	GetOrder(orderID string) (*OrderOutputDTO, error)
 }
 
 type orderUsecase struct {
@@ -74,13 +75,17 @@ func (ou *orderUsecase) StartOrderProcessingWorker() {
 	}
 }
 
-func (ou *orderUsecase) ProcessOrder(orderInput *OrderInputDTO) error {
+func (ou *orderUsecase) ProcessOrder(orderInput *OrderInputDTO) (string, error) {
 	orderEntity, err := order.NewOrder(orderInput.UserID, orderInput.Type, orderInput.Amount, orderInput.Price)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return ou.queueInterface.EnqueueOrder(orderEntity)
+	if err := ou.queueInterface.EnqueueOrder(orderEntity); err != nil {
+		return "", err
+	}
+
+	return orderEntity.ID, nil
 }
 
 func (ou *orderUsecase) ExecuteOrder(orderEntity *order.Order) error {
@@ -91,6 +96,12 @@ func (ou *orderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 			return err
 		}
 		if wallet.Balance < float64(orderEntity.Amount)*orderEntity.Price {
+			orderEntity.Status = order.OrderStatusCanceled
+			err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
+			if err != nil {
+				return err
+			}
+
 			return errors.New("insufficient balance")
 		}
 
@@ -109,6 +120,12 @@ func (ou *orderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 		}
 
 		if wallet.Vibranium < orderEntity.Amount {
+			orderEntity.Status = order.OrderStatusCanceled
+			err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
+			if err != nil {
+				return err
+			}
+
 			return errors.New("insufficient vibranium")
 		}
 

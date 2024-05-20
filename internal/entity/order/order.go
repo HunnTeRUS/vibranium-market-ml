@@ -11,6 +11,7 @@ const (
 
 	OrderStatusPending   = "PENDING"
 	OrderStatusCompleted = "COMPLETED"
+	OrderStatusCanceled  = "CANCELED"
 )
 
 type Order struct {
@@ -24,6 +25,7 @@ type Order struct {
 
 type OrderRepositoryInterface interface {
 	UpsertOrder(order *Order) error
+	GetOrder(orderID string) (*Order, error)
 }
 
 type OrderQueueInterface interface {

@@ -22,11 +22,11 @@ func (oc *OrderController) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	err := oc.orderUsecase.ProcessOrder(&orderInput)
+	orderId, err := oc.orderUsecase.ProcessOrder(&orderInput)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.Status(http.StatusCreated)
+	c.JSON(http.StatusCreated, gin.H{"orderId": orderId})
 }

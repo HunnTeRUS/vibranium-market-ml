@@ -8,6 +8,15 @@ import (
 	"os"
 )
 
+type OrderDynamoDBEntity struct {
+	ID     string  `json:"ID"`
+	UserID string  `json:"userId"`
+	Type   int     `json:"type"`
+	Amount int     `json:"amount"`
+	Price  float64 `json:"price"`
+	Status string  `json:"status"`
+}
+
 type orderRepository struct {
 	dynamodbConnection *dynamodb.DynamoDB
 }
@@ -18,7 +27,13 @@ func NewOrderRepository(dynamodbConnection *dynamodb.DynamoDB) *orderRepository 
 
 func (u *orderRepository) UpsertOrder(order *order.Order) error {
 	tableName := os.Getenv("DYNAMODB_ORDERS_TABLE")
-	item, err := dynamodbattribute.MarshalMap(order)
+	item, err := dynamodbattribute.MarshalMap(&OrderDynamoDBEntity{
+		ID:     order.ID,
+		UserID: order.UserID,
+		Type:   order.Type,
+		Amount: order.Amount,
+		Price:  order.Price,
+	})
 	if err != nil {
 		return err
 	}
