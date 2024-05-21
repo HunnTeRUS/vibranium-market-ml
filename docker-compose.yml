@@ -25,7 +25,7 @@ services:
         echo 'Waiting for LocalStack to be ready...';
         sleep 5;
         done;
-        awslocal s3api create-bucket --bucket my-s3-bucket;
+        awslocal s3api create-bucket --bucket orders;
         exec localstack start
       "
 

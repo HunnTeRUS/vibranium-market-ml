@@ -30,7 +30,7 @@ type OrderRepositoryInterface interface {
 
 type OrderQueueInterface interface {
 	EnqueueOrder(order *Order) error
-	DequeueOrder() ([]*Order, error)
+	DequeueOrder() (*Order, error)
 }
 
 func NewOrder(userID string, orderType int, amount int, price float64) (*Order, error) {

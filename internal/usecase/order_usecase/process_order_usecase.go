@@ -8,6 +8,7 @@ import (
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/metrics"
 	"os"
 	"strconv"
+	"sync"
 )
 
 type OrderInputDTO struct {
@@ -56,33 +57,33 @@ func (ou *OrderUsecase) StartOrderProcessingWorker() {
 		numWorkers = 10
 	}
 
+	var wg sync.WaitGroup
+
 	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			for {
 				orderUnprocessed, err := ou.queueInterface.DequeueOrder()
-				if err != nil || len(orderUnprocessed) == 0 {
+				if err != nil || orderUnprocessed == nil {
 					continue
 				}
 
 				metrics.ConcurrentOrdersProcessing.Inc()
 
-				for _, orderV := range orderUnprocessed {
-					if orderV == nil {
-						continue
+				go func(orderV *order.Order) {
+					defer metrics.ConcurrentOrdersProcessing.Dec()
+
+					err = ou.ExecuteOrder(orderV)
+					if err != nil {
+						logger.Error("action=GetOrderUseCase, message=error trying to process order", err)
 					}
-
-					go func(orderV *order.Order) {
-						defer metrics.ConcurrentOrdersProcessing.Dec()
-
-						err = ou.ExecuteOrder(orderV)
-						if err != nil {
-							logger.Error("action=GetOrderUseCase, message=error trying to process order", err)
-						}
-					}(orderV)
-				}
+				}(orderUnprocessed)
 			}
 		}()
 	}
+
+	wg.Wait()
 }
 
 func (ou *OrderUsecase) ProcessOrder(orderInput *OrderInputDTO) (string, error) {

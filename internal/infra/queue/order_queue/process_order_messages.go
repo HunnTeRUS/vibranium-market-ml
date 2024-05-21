@@ -2,6 +2,7 @@ package order_queue
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/metrics"
@@ -37,25 +38,22 @@ func (q *OrderQueue) EnqueueOrder(order *order.Order) error {
 	return nil
 }
 
-func (q *OrderQueue) DequeueOrder() ([]*order.Order, error) {
-	var orders []*order.Order
-
-	for i := 0; i < 10; i++ {
-		message := q.disruptor.Dequeue()
-		if message == nil {
-			break
-		}
-
-		var orderEntity order.Order
-		err := json.Unmarshal(message.([]byte), &orderEntity)
-		if err != nil {
-			metrics.ProcessingErrors.Inc()
-			return nil, err
-		}
-		orders = append(orders, &orderEntity)
+func (q *OrderQueue) DequeueOrder() (*order.Order, error) {
+	message := q.disruptor.Dequeue()
+	if message != nil {
+		return nil, errors.New("invalid nil object inside the queue")
 	}
-	metrics.OrdersDequeued.Add(float64(len(orders)))
-	return orders, nil
+
+	var orderEntity order.Order
+	err := json.Unmarshal(message.([]byte), &orderEntity)
+	if err != nil {
+		metrics.ProcessingErrors.Inc()
+		return nil, err
+	}
+
+	metrics.OrdersDequeued.Inc()
+
+	return &orderEntity, nil
 }
 
 func (q *OrderQueue) SaveSnapshot() error {
