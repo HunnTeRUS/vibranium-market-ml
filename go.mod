@@ -1,6 +1,6 @@
 module github.com/HunnTeRUS/vibranium-market-ml
 
-go 1.18
+go 1.19
 
 require (
 	github.com/aws/aws-sdk-go v1.53.5

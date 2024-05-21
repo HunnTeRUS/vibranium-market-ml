@@ -1,6 +1,7 @@
 package wallet_usecase
 
 import (
+	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
 )
 
@@ -32,6 +33,7 @@ func NewWalletUsecase(repositoryInterface wallet.WalletRepositoryInterface) *Wal
 func (wu *WalletUsecase) CreateWallet() (*WalletOuputDTO, error) {
 	walletEntity := wallet.NewWallet()
 	if err := wu.repositoryInterface.CreateWallet(walletEntity); err != nil {
+		logger.Error("action=CreateWallet, message=error calling CreateWallet repository", err)
 		return nil, err
 	}
 

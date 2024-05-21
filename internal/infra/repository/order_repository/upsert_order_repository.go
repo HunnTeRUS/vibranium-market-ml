@@ -1,7 +1,7 @@
 package order_repository
 
 import (
-	"fmt"
+	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -36,8 +36,9 @@ func (u *OrderRepository) UpsertOrder(order *order.Order) error {
 		Price:  order.Price,
 		Status: order.Status,
 	})
-	fmt.Println(item)
+
 	if err != nil {
+		logger.Error("Error trying to unmarshal object for dynamodb", err)
 		return err
 	}
 	input := &dynamodb.PutItemInput{

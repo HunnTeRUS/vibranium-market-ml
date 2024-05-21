@@ -2,6 +2,8 @@ package wallet_repository
 
 import (
 	"errors"
+	"fmt"
+	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -21,14 +23,17 @@ func (wr *walletRepository) GetWallet(userId string) (*wallet.Wallet, error) {
 	}
 	result, err := wr.dynamodbConnection.GetItem(input)
 	if err != nil {
+		logger.Error("error trying to get object from", err)
 		return nil, err
 	}
 	if result.Item == nil {
-		return nil, errors.New("wallet not found")
+		logger.Warn(fmt.Sprintf("wallet %s not found", userId))
+		return nil, errors.New(fmt.Sprintf("wallet %s not found", userId))
 	}
 	wallet := new(wallet.Wallet)
 	err = dynamodbattribute.UnmarshalMap(result.Item, wallet)
 	if err != nil {
+		logger.Error("error trying to unmarshal object for dynamodb", err)
 		return nil, err
 	}
 	return wallet, nil

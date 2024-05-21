@@ -1,9 +1,13 @@
 package wallet_usecase
 
-import "github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
+import (
+	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
+	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
+)
 
 func (wu *WalletUsecase) DepositWallet(userId string, amount float64) error {
 	if err := wallet.ValidateDeposit(userId, amount); err != nil {
+		logger.Error("action=DepositWallet, message=error calling ValidateDeposit validation", err)
 		return err
 	}
 

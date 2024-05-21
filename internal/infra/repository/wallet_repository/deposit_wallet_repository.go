@@ -2,6 +2,7 @@ package wallet_repository
 
 import (
 	"fmt"
+	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"os"
@@ -30,6 +31,7 @@ func (wr *walletRepository) DepositToWallet(userID string, amount float64) error
 	}
 	_, err := wr.dynamodbConnection.UpdateItem(input)
 	if err != nil {
+		logger.Error("error trying to update object on dynamodb", err)
 		return err
 	}
 

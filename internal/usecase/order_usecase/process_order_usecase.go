@@ -2,9 +2,9 @@ package order_usecase
 
 import (
 	"errors"
+	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
-	"log"
 	"os"
 	"strconv"
 )
@@ -65,7 +65,7 @@ func (ou *OrderUsecase) StartOrderProcessingWorker() {
 
 				err = ou.ExecuteOrder(orderUnprocessed)
 				if err != nil {
-					log.Printf("Failed to process order: %v", err)
+					logger.Error("action=GetOrderUseCase, message=error trying to process order", err)
 				}
 			}
 		}()
@@ -101,6 +101,7 @@ func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 			orderEntity.Status = order.OrderStatusCanceled
 			err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
 			if err != nil {
+				logger.Error("action=ExecuteOrder, message=error calling UpsertOrder repository for cancelling order", err)
 				return err
 			}
 
@@ -125,6 +126,7 @@ func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 			orderEntity.Status = order.OrderStatusCanceled
 			err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
 			if err != nil {
+				logger.Error("action=ExecuteOrder, message=error calling UpsertOrder repository for cancelling order", err)
 				return err
 			}
 
@@ -135,6 +137,7 @@ func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 		walletEntity.Balance += float64(orderEntity.Amount) * orderEntity.Price
 		err = ou.walletRepositoryInterface.UpdateWallet(walletEntity)
 		if err != nil {
+			logger.Error("action=ExecuteOrder, message=error calling UpdateWallet repository", err)
 			return err
 		}
 	}
@@ -142,6 +145,7 @@ func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 	orderEntity.Status = order.OrderStatusCompleted
 	err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
 	if err != nil {
+		logger.Error("action=ExecuteOrder, message=error calling UpsertOrder repository for completing order", err)
 		return err
 	}
 
