@@ -2,7 +2,7 @@ package main
 
 import (
 	dynamodbConn "github.com/HunnTeRUS/vibranium-market-ml/config/database/dynamodb"
-	redisConn "github.com/HunnTeRUS/vibranium-market-ml/config/queue/redis"
+	sqsConn "github.com/HunnTeRUS/vibranium-market-ml/config/queue/sqs"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/api/web/order_controller"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/api/web/wallet_controller"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/queue/order_queue"
@@ -11,8 +11,8 @@ import (
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/usecase/order_usecase"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/usecase/wallet_usecase"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis/v8"
 	"github.com/joho/godotenv"
 	"log"
 )
@@ -24,9 +24,9 @@ func main() {
 
 	dynamodbClient := dynamodbConn.InitDB()
 
-	redisClient := redisConn.InitQueue()
+	sqsClient := sqsConn.InitQueue()
 
-	walletController, orderController := initDependencies(redisClient, dynamodbClient)
+	walletController, orderController := initDependencies(sqsClient, dynamodbClient)
 
 	r := gin.Default()
 
@@ -44,7 +44,7 @@ func main() {
 }
 
 func initDependencies(
-	redisConnection *redis.Client, dynamoDbConnection *dynamodb.DynamoDB) (
+	sqsConnection *sqs.SQS, dynamoDbConnection *dynamodb.DynamoDB) (
 	walletController *wallet_controller.WalletController,
 	orderController *order_controller.OrderController) {
 
@@ -53,7 +53,7 @@ func initDependencies(
 	orderUsecase := order_usecase.NewOrderUsecase(
 		order_repository.NewOrderRepository(dynamoDbConnection),
 		walletRepository,
-		order_queue.NewOrderQueue(redisConnection))
+		order_queue.NewOrderQueue(sqsConnection))
 
 	walletController = wallet_controller.NewWalletController(
 		wallet_usecase.NewWalletUsecase(walletRepository))

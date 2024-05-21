@@ -1,18 +1,22 @@
 package order_queue
 
 import (
-	"context"
 	"encoding/json"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
-	"github.com/go-redis/redis/v8"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/sqs"
+	"os"
 )
 
 type orderQueue struct {
-	redisConnection *redis.Client
+	sqsConnection *sqs.SQS
+	sqsQueueURL   string
 }
 
-func NewOrderQueue(redisConnection *redis.Client) *orderQueue {
-	return &orderQueue{redisConnection}
+func NewOrderQueue(sqsConnection *sqs.SQS) *orderQueue {
+	return &orderQueue{
+		sqsConnection,
+		os.Getenv("SQS_QUEUE_URL")}
 }
 
 func (q *orderQueue) EnqueueOrder(order *order.Order) error {
@@ -20,18 +24,41 @@ func (q *orderQueue) EnqueueOrder(order *order.Order) error {
 	if err != nil {
 		return err
 	}
-	return q.redisConnection.LPush(context.Background(), "orderQueue", orderJSON).Err()
+	_, err = q.sqsConnection.SendMessage(&sqs.SendMessageInput{
+		QueueUrl:       aws.String(q.sqsQueueURL),
+		MessageBody:    aws.String(string(orderJSON)),
+		MessageGroupId: aws.String("default"),
+	})
+	return err
 }
 
 func (q *orderQueue) DequeueOrder() (*order.Order, error) {
-	result, err := q.redisConnection.RPop(context.Background(), "orderQueue").Result()
+	result, err := q.sqsConnection.ReceiveMessage(&sqs.ReceiveMessageInput{
+		QueueUrl:            aws.String(q.sqsQueueURL),
+		MaxNumberOfMessages: aws.Int64(1),
+		WaitTimeSeconds:     aws.Int64(10),
+	})
 	if err != nil {
 		return nil, err
 	}
+
+	if len(result.Messages) == 0 {
+		return nil, nil
+	}
+
 	var order order.Order
-	err = json.Unmarshal([]byte(result), &order)
+	err = json.Unmarshal([]byte(*result.Messages[0].Body), &order)
 	if err != nil {
 		return nil, err
 	}
+
+	_, err = q.sqsConnection.DeleteMessage(&sqs.DeleteMessageInput{
+		QueueUrl:      aws.String(q.sqsQueueURL),
+		ReceiptHandle: result.Messages[0].ReceiptHandle,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &order, nil
 }

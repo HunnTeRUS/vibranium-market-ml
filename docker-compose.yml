@@ -10,26 +10,28 @@ services:
     env_file:
       - cmd/market-vibranium/.env
     depends_on:
-      - redis
-      - dynamodb
-    command: sh -c "while ! nc -z redis 6379; do sleep 1; done && while ! nc -z dynamodb 8000; do sleep 1; done && go run init_dynamodb.go && /market-vibranium"
+      - localstack
+      - sqs-creator
+    command: sh -c "go run infra/local/init_dynamodb.go && /market-vibranium"
 
-  redis:
-    image: redis:6
+  localstack:
+    image: localstack/localstack
     ports:
-      - "6379:6379"
-
-  dynamodb:
-    image: amazon/dynamodb-local
-    ports:
-      - "8000:8000"
-    command: "-jar DynamoDBLocal.jar -inMemory -sharedDb"
-
-  dynamodb-admin:
-    image: aaronshaf/dynamodb-admin
-    ports:
-      - "8001:8001"
+      - "4566:4566"
+      - "4575:4575"
     environment:
-      DYNAMO_ENDPOINT: http://dynamodb:8000
+      - SERVICES=sqs,dynamodb,s3
+      - DEBUG=1
+
+  sqs-creator:
+    image: amazon/aws-cli
     depends_on:
-      - dynamodb
+      - localstack
+    entrypoint: >
+      sh -c "
+        until curl -s http://localstack:4566/health; do
+          echo waiting for localstack;
+          sleep 5;
+        done;
+        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name order-queue.fifo --attributes FifoQueue=true,ContentBasedDeduplication=true --region us-east-1 --no-sign-request
+      "

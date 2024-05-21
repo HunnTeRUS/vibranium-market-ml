@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/joho/godotenv"
 	"log"
 	"os"
 
@@ -11,13 +12,16 @@ import (
 )
 
 func main() {
+	godotenv.Load("cmd/market-vibranium/.env")
+
 	region := os.Getenv("AWS_REGION")
 	walletsTable := os.Getenv("DYNAMODB_WALLETS_TABLE")
 	ordersTable := os.Getenv("DYNAMODB_ORDERS_TABLE")
+	dynamodbEndpoint := os.Getenv("DYNAMODB_ENDPOINT")
 
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region:      aws.String(region),
-		Endpoint:    aws.String("http://dynamodb:8000"),
+		Endpoint:    aws.String(dynamodbEndpoint),
 		Credentials: credentials.NewStaticCredentials("dummy", "dummy", "dummy"),
 	}))
 

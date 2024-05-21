@@ -59,7 +59,7 @@ func (ou *OrderUsecase) StartOrderProcessingWorker() {
 		go func() {
 			for {
 				orderUnprocessed, err := ou.queueInterface.DequeueOrder()
-				if err != nil {
+				if err != nil || orderUnprocessed == nil {
 					continue
 				}
 
