@@ -9,10 +9,6 @@ import (
 	"strconv"
 )
 
-const (
-	NumWorkers = 10
-)
-
 type OrderInputDTO struct {
 	UserID string  `json:"userId" binding:"required"`
 	Type   int     `json:"type" binding:"required"`
@@ -21,11 +17,12 @@ type OrderInputDTO struct {
 }
 
 type OrderOutputDTO struct {
-	ID     string  `json:"ID"`
+	ID     string  `json:"orderId"`
 	UserID string  `json:"userId"`
 	Type   int     `json:"type"`
 	Amount int     `json:"amount"`
 	Price  float64 `json:"price"`
+	Status string  `json:"status"`
 }
 
 type OrderUsecaseInterface interface {
@@ -33,7 +30,7 @@ type OrderUsecaseInterface interface {
 	GetOrder(orderID string) (*OrderOutputDTO, error)
 }
 
-type orderUsecase struct {
+type OrderUsecase struct {
 	orderRepositoryInterface  order.OrderRepositoryInterface
 	queueInterface            order.OrderQueueInterface
 	walletRepositoryInterface wallet.WalletRepositoryInterface
@@ -43,8 +40,8 @@ func NewOrderUsecase(
 	orderRepositoryInterface order.OrderRepositoryInterface,
 	walletRepositoryInterface wallet.WalletRepositoryInterface,
 	queueInterface order.OrderQueueInterface,
-) *orderUsecase {
-	orderUsecaseObj := &orderUsecase{
+) *OrderUsecase {
+	orderUsecaseObj := &OrderUsecase{
 		orderRepositoryInterface,
 		queueInterface,
 		walletRepositoryInterface}
@@ -52,7 +49,7 @@ func NewOrderUsecase(
 	return orderUsecaseObj
 }
 
-func (ou *orderUsecase) StartOrderProcessingWorker() {
+func (ou *OrderUsecase) StartOrderProcessingWorker() {
 	numWorkers, err := strconv.Atoi(os.Getenv("NUM_WORKERS"))
 	if err != nil {
 		numWorkers = 10
@@ -61,12 +58,12 @@ func (ou *orderUsecase) StartOrderProcessingWorker() {
 	for i := 0; i < numWorkers; i++ {
 		go func() {
 			for {
-				order, err := ou.queueInterface.DequeueOrder()
+				orderUnprocessed, err := ou.queueInterface.DequeueOrder()
 				if err != nil {
 					continue
 				}
 
-				err = ou.ExecuteOrder(order)
+				err = ou.ExecuteOrder(orderUnprocessed)
 				if err != nil {
 					log.Printf("Failed to process order: %v", err)
 				}
@@ -75,8 +72,13 @@ func (ou *orderUsecase) StartOrderProcessingWorker() {
 	}
 }
 
-func (ou *orderUsecase) ProcessOrder(orderInput *OrderInputDTO) (string, error) {
+func (ou *OrderUsecase) ProcessOrder(orderInput *OrderInputDTO) (string, error) {
 	orderEntity, err := order.NewOrder(orderInput.UserID, orderInput.Type, orderInput.Amount, orderInput.Price)
+	if err != nil {
+		return "", err
+	}
+
+	err = ou.orderRepositoryInterface.UpsertOrder(orderEntity)
 	if err != nil {
 		return "", err
 	}
@@ -88,14 +90,14 @@ func (ou *orderUsecase) ProcessOrder(orderInput *OrderInputDTO) (string, error) 
 	return orderEntity.ID, nil
 }
 
-func (ou *orderUsecase) ExecuteOrder(orderEntity *order.Order) error {
+func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 	switch orderEntity.Type {
 	case order.OrderTypeBuy:
-		wallet, err := ou.walletRepositoryInterface.GetWallet(orderEntity.UserID)
+		walletEntity, err := ou.walletRepositoryInterface.GetWallet(orderEntity.UserID)
 		if err != nil {
 			return err
 		}
-		if wallet.Balance < float64(orderEntity.Amount)*orderEntity.Price {
+		if walletEntity.Balance < float64(orderEntity.Amount)*orderEntity.Price {
 			orderEntity.Status = order.OrderStatusCanceled
 			err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
 			if err != nil {
@@ -105,21 +107,21 @@ func (ou *orderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 			return errors.New("insufficient balance")
 		}
 
-		wallet.Balance -= float64(orderEntity.Amount) * orderEntity.Price
-		wallet.Vibranium += orderEntity.Amount
+		walletEntity.Balance -= float64(orderEntity.Amount) * orderEntity.Price
+		walletEntity.Vibranium += orderEntity.Amount
 
-		err = ou.walletRepositoryInterface.UpdateWallet(wallet)
+		err = ou.walletRepositoryInterface.UpdateWallet(walletEntity)
 		if err != nil {
 			return err
 		}
 
 	case order.OrderTypeSell:
-		wallet, err := ou.walletRepositoryInterface.GetWallet(orderEntity.UserID)
+		walletEntity, err := ou.walletRepositoryInterface.GetWallet(orderEntity.UserID)
 		if err != nil {
 			return err
 		}
 
-		if wallet.Vibranium < orderEntity.Amount {
+		if walletEntity.Vibranium < orderEntity.Amount {
 			orderEntity.Status = order.OrderStatusCanceled
 			err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
 			if err != nil {
@@ -129,19 +131,18 @@ func (ou *orderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 			return errors.New("insufficient vibranium")
 		}
 
-		wallet.Vibranium -= orderEntity.Amount
-		wallet.Balance += float64(orderEntity.Amount) * orderEntity.Price
-		err = ou.walletRepositoryInterface.UpdateWallet(wallet)
+		walletEntity.Vibranium -= orderEntity.Amount
+		walletEntity.Balance += float64(orderEntity.Amount) * orderEntity.Price
+		err = ou.walletRepositoryInterface.UpdateWallet(walletEntity)
 		if err != nil {
 			return err
 		}
+	}
 
-	default:
-		orderEntity.Status = order.OrderStatusCompleted
-		err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
-		if err != nil {
-			return err
-		}
+	orderEntity.Status = order.OrderStatusCompleted
+	err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
+	if err != nil {
+		return err
 	}
 
 	return nil

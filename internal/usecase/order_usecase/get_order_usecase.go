@@ -1,6 +1,6 @@
 package order_usecase
 
-func (ou *orderUsecase) GetOrder(orderID string) (*OrderOutputDTO, error) {
+func (ou *OrderUsecase) GetOrder(orderID string) (*OrderOutputDTO, error) {
 	orderEntity, err := ou.orderRepositoryInterface.GetOrder(orderID)
 	if err != nil {
 		return nil, err
@@ -12,5 +12,6 @@ func (ou *orderUsecase) GetOrder(orderID string) (*OrderOutputDTO, error) {
 		Type:   orderEntity.Type,
 		Amount: orderEntity.Amount,
 		Price:  orderEntity.Price,
+		Status: orderEntity.Status,
 	}, nil
 }

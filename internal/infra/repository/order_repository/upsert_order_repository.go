@@ -1,6 +1,7 @@
 package order_repository
 
 import (
+	"fmt"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -9,23 +10,23 @@ import (
 )
 
 type OrderDynamoDBEntity struct {
-	ID     string  `json:"ID"`
-	UserID string  `json:"userId"`
-	Type   int     `json:"type"`
-	Amount int     `json:"amount"`
-	Price  float64 `json:"price"`
-	Status string  `json:"status"`
+	ID     string  `json:"ID" dynamodbav:"ID"`
+	UserID string  `json:"userId" dynamodbav:"UserId"`
+	Type   int     `json:"type" dynamodbav:"Type"`
+	Amount int     `json:"amount" dynamodbav:"Amount"`
+	Price  float64 `json:"price" dynamodbav:"Price"`
+	Status string  `json:"status" dynamodbav:"Status"`
 }
 
-type orderRepository struct {
+type OrderRepository struct {
 	dynamodbConnection *dynamodb.DynamoDB
 }
 
-func NewOrderRepository(dynamodbConnection *dynamodb.DynamoDB) *orderRepository {
-	return &orderRepository{dynamodbConnection}
+func NewOrderRepository(dynamodbConnection *dynamodb.DynamoDB) *OrderRepository {
+	return &OrderRepository{dynamodbConnection}
 }
 
-func (u *orderRepository) UpsertOrder(order *order.Order) error {
+func (u *OrderRepository) UpsertOrder(order *order.Order) error {
 	tableName := os.Getenv("DYNAMODB_ORDERS_TABLE")
 	item, err := dynamodbattribute.MarshalMap(&OrderDynamoDBEntity{
 		ID:     order.ID,
@@ -33,7 +34,9 @@ func (u *orderRepository) UpsertOrder(order *order.Order) error {
 		Type:   order.Type,
 		Amount: order.Amount,
 		Price:  order.Price,
+		Status: order.Status,
 	})
+	fmt.Println(item)
 	if err != nil {
 		return err
 	}

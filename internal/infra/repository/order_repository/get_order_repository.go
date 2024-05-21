@@ -2,6 +2,7 @@ package order_repository
 
 import (
 	"errors"
+	"fmt"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -9,8 +10,10 @@ import (
 	"os"
 )
 
-func (u *orderRepository) GetOrder(orderID string) (*order.Order, error) {
+func (u *OrderRepository) GetOrder(orderID string) (*order.Order, error) {
 	tableName := os.Getenv("DYNAMODB_ORDERS_TABLE")
+
+	fmt.Println(orderID)
 	input := &dynamodb.GetItemInput{
 		TableName: aws.String(tableName),
 		Key: map[string]*dynamodb.AttributeValue{
