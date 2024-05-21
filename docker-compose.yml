@@ -11,7 +11,6 @@ services:
       - cmd/market-vibranium/.env
     depends_on:
       - localstack
-      - sqs-creator
     command: sh -c "go run infra/local/init_dynamodb.go && /market-vibranium"
 
   localstack:
@@ -21,17 +20,35 @@ services:
       - "4575:4575"
     environment:
       - SERVICES=sqs,dynamodb,s3
-      - DEBUG=1
-
-  sqs-creator:
-    image: amazon/aws-cli
-    depends_on:
-      - localstack
-    entrypoint: >
-      sh -c "
-        until curl -s http://localstack:4566/health; do
-          echo waiting for localstack;
-          sleep 5;
+    command: sh -c "
+        until curl -s http://localhost:4566/health | grep 'running'; do
+        echo 'Waiting for LocalStack to be ready...';
+        sleep 5;
         done;
-        aws --endpoint-url=http://localstack:4566 sqs create-queue --queue-name order-queue.fifo --attributes FifoQueue=true,ContentBasedDeduplication=true --region us-east-1 --no-sign-request
+        awslocal s3api create-bucket --bucket my-s3-bucket;
+        exec localstack start
       "
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./provisioning/dashboards_json:/var/lib/grafana/dashboards
+
+volumes:
+  grafana-storage:

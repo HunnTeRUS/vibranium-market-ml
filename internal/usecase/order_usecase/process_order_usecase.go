@@ -5,15 +5,16 @@ import (
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
+	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/metrics"
 	"os"
 	"strconv"
 )
 
 type OrderInputDTO struct {
-	UserID string  `json:"userId" binding:"required"`
-	Type   int     `json:"type" binding:"required"`
-	Amount int     `json:"amount" binding:"required"`
-	Price  float64 `json:"price" binding:"required"`
+	UserID string  `json:"userId"`
+	Type   int     `json:"type"`
+	Amount int     `json:"amount"`
+	Price  float64 `json:"price"`
 }
 
 type OrderOutputDTO struct {
@@ -59,13 +60,25 @@ func (ou *OrderUsecase) StartOrderProcessingWorker() {
 		go func() {
 			for {
 				orderUnprocessed, err := ou.queueInterface.DequeueOrder()
-				if err != nil || orderUnprocessed == nil {
+				if err != nil || len(orderUnprocessed) == 0 {
 					continue
 				}
 
-				err = ou.ExecuteOrder(orderUnprocessed)
-				if err != nil {
-					logger.Error("action=GetOrderUseCase, message=error trying to process order", err)
+				metrics.ConcurrentOrdersProcessing.Inc()
+
+				for _, orderV := range orderUnprocessed {
+					if orderV == nil {
+						continue
+					}
+
+					go func(orderV *order.Order) {
+						defer metrics.ConcurrentOrdersProcessing.Dec()
+
+						err = ou.ExecuteOrder(orderV)
+						if err != nil {
+							logger.Error("action=GetOrderUseCase, message=error trying to process order", err)
+						}
+					}(orderV)
 				}
 			}
 		}()
@@ -78,6 +91,7 @@ func (ou *OrderUsecase) ProcessOrder(orderInput *OrderInputDTO) (string, error) 
 		return "", err
 	}
 
+	metrics.OrderPending.Inc()
 	err = ou.orderRepositoryInterface.UpsertOrder(orderEntity)
 	if err != nil {
 		return "", err
@@ -87,10 +101,14 @@ func (ou *OrderUsecase) ProcessOrder(orderInput *OrderInputDTO) (string, error) 
 		return "", err
 	}
 
+	metrics.TotalValueProcessed.Add(orderInput.Price)
+
 	return orderEntity.ID, nil
 }
 
 func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
+	defer metrics.OrderPending.Dec()
+
 	switch orderEntity.Type {
 	case order.OrderTypeBuy:
 		walletEntity, err := ou.walletRepositoryInterface.GetWallet(orderEntity.UserID)
@@ -99,6 +117,7 @@ func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 		}
 		if walletEntity.Balance < float64(orderEntity.Amount)*orderEntity.Price {
 			orderEntity.Status = order.OrderStatusCanceled
+			metrics.OrderCanceled.Inc()
 			err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
 			if err != nil {
 				logger.Error("action=ExecuteOrder, message=error calling UpsertOrder repository for cancelling order", err)
@@ -124,6 +143,7 @@ func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 
 		if walletEntity.Vibranium < orderEntity.Amount {
 			orderEntity.Status = order.OrderStatusCanceled
+			metrics.OrderCanceled.Inc()
 			err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
 			if err != nil {
 				logger.Error("action=ExecuteOrder, message=error calling UpsertOrder repository for cancelling order", err)
@@ -143,8 +163,10 @@ func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 	}
 
 	orderEntity.Status = order.OrderStatusCompleted
+	metrics.OrderProcessed.Inc()
 	err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
 	if err != nil {
+		metrics.ProcessingErrors.Inc()
 		logger.Error("action=ExecuteOrder, message=error calling UpsertOrder repository for completing order", err)
 		return err
 	}

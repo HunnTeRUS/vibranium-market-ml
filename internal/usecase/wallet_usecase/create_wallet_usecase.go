@@ -6,8 +6,8 @@ import (
 )
 
 type WalletDepositInputDTO struct {
-	UserID string  `json:"userId" binding:"required"`
-	Amount float64 `json:"amount" binding:"required"`
+	UserID string  `json:"userId"`
+	Amount float64 `json:"amount"`
 }
 
 type WalletOuputDTO struct {

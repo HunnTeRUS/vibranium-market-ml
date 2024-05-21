@@ -31,7 +31,7 @@ func (u *OrderRepository) GetOrder(orderID string) (*order.Order, error) {
 	}
 	if result.Item == nil {
 		logger.Warn(fmt.Sprintf("order %s was not found", orderID))
-		return nil, errors.New("order %s not found")
+		return nil, errors.New(fmt.Sprintf("order %s was not found", orderID))
 	}
 
 	orderDbEntity := new(OrderDynamoDBEntity)

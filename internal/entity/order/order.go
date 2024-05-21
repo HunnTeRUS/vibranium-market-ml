@@ -30,12 +30,18 @@ type OrderRepositoryInterface interface {
 
 type OrderQueueInterface interface {
 	EnqueueOrder(order *Order) error
-	DequeueOrder() (*Order, error)
+	DequeueOrder() ([]*Order, error)
 }
 
 func NewOrder(userID string, orderType int, amount int, price float64) (*Order, error) {
 	if orderType != OrderTypeBuy && orderType != OrderTypeSell {
 		return nil, errors.New("invalid order type")
+	}
+	if amount <= 0 {
+		return nil, errors.New("invalid amount value")
+	}
+	if price <= 0 {
+		return nil, errors.New("invalid price value")
 	}
 
 	return &Order{

@@ -4,100 +4,64 @@ import (
 	"encoding/json"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/sqs"
-	"log"
-	"os"
-	"time"
+	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/metrics"
 )
 
-type orderQueue struct {
-	sqsConnection *sqs.SQS
-	sqsQueueURL   string
+type OrderQueue struct {
+	disruptor *Disruptor
 }
 
-func NewOrderQueue(sqsConnection *sqs.SQS) *orderQueue {
-	q := &orderQueue{
-		sqsConnection: sqsConnection,
-		sqsQueueURL:   os.Getenv("SQS_QUEUE_URL"),
+func NewOrderQueue(initialSize int) *OrderQueue {
+	return &OrderQueue{
+		disruptor: NewDisruptor(initialSize),
 	}
+}
 
-	const maxRetries = 100
-	retries := 0
+func (q *OrderQueue) EnqueueOrder(order *order.Order) error {
+	orderJSON, err := json.Marshal(order)
+	if err != nil {
+		metrics.ProcessingErrors.Inc()
+		return err
+	}
+	err = q.disruptor.Enqueue(orderJSON)
+	if err == ErrBufferFull {
+		metrics.ProcessingErrors.Inc()
+		metrics.BufferFull.Inc()
+		logger.Warn("Buffer is full, expanding buffer and retrying...")
+		err = q.disruptor.Enqueue(orderJSON)
+		if err != nil {
+			return err
+		}
+	}
+	metrics.OrdersEnqueued.Inc()
+	return nil
+}
 
-	for {
-		_, err := q.sqsConnection.GetQueueAttributes(&sqs.GetQueueAttributesInput{
-			QueueUrl: aws.String(q.sqsQueueURL),
-			AttributeNames: aws.StringSlice([]string{
-				"All",
-			}),
-		})
+func (q *OrderQueue) DequeueOrder() ([]*order.Order, error) {
+	var orders []*order.Order
 
-		if err == nil {
+	for i := 0; i < 10; i++ {
+		message := q.disruptor.Dequeue()
+		if message == nil {
 			break
 		}
 
-		aerr, ok := err.(awserr.Error)
-		if ok && aerr.Code() == sqs.ErrCodeQueueDoesNotExist {
-			logger.Warn("Queue does not exist, waiting for it to be created...")
-			time.Sleep(2 * time.Second)
-			retries++
-			if retries >= maxRetries {
-				log.Fatalf("Queue was not created after %d retries, exiting.", maxRetries)
-			}
-			continue
+		var orderEntity order.Order
+		err := json.Unmarshal(message.([]byte), &orderEntity)
+		if err != nil {
+			metrics.ProcessingErrors.Inc()
+			return nil, err
 		}
-
-		log.Fatalf("Failed to check queue existence: %v", err)
+		orders = append(orders, &orderEntity)
 	}
-
-	logger.Info("Queue exists, proceeding...")
-	return q
+	metrics.OrdersDequeued.Add(float64(len(orders)))
+	return orders, nil
 }
 
-func (q *orderQueue) EnqueueOrder(order *order.Order) error {
-	orderJSON, err := json.Marshal(order)
-	if err != nil {
-		return err
-	}
-	_, err = q.sqsConnection.SendMessage(&sqs.SendMessageInput{
-		QueueUrl:       aws.String(q.sqsQueueURL),
-		MessageBody:    aws.String(string(orderJSON)),
-		MessageGroupId: aws.String("default"),
-	})
-	return err
+func (q *OrderQueue) SaveSnapshot() error {
+	return q.disruptor.SaveSnapshotToS3()
 }
 
-func (q *orderQueue) DequeueOrder() (*order.Order, error) {
-	result, err := q.sqsConnection.ReceiveMessage(&sqs.ReceiveMessageInput{
-		QueueUrl:            aws.String(q.sqsQueueURL),
-		MaxNumberOfMessages: aws.Int64(1),
-		WaitTimeSeconds:     aws.Int64(10),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if len(result.Messages) == 0 {
-		return nil, nil
-	}
-
-	var order order.Order
-	err = json.Unmarshal([]byte(*result.Messages[0].Body), &order)
-	if err != nil {
-		logger.Error("Error trying to unmarshal message from queue", err)
-		return nil, err
-	}
-
-	_, err = q.sqsConnection.DeleteMessage(&sqs.DeleteMessageInput{
-		QueueUrl:      aws.String(q.sqsQueueURL),
-		ReceiptHandle: result.Messages[0].ReceiptHandle,
-	})
-	if err != nil {
-		logger.Error("Error trying to delete message from queue", err)
-		return nil, err
-	}
-
-	return &order, nil
+func (q *OrderQueue) LoadSnapshot() error {
+	return q.disruptor.LoadSnapshotFromS3()
 }
