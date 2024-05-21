@@ -40,12 +40,17 @@ func (q *OrderQueue) EnqueueOrder(order *order.Order) error {
 
 func (q *OrderQueue) DequeueOrder() (*order.Order, error) {
 	message := q.disruptor.Dequeue()
-	if message != nil {
+	if message == nil {
 		return nil, errors.New("invalid nil object inside the queue")
 	}
 
 	var orderEntity order.Order
-	err := json.Unmarshal(message.([]byte), &orderEntity)
+	t, ok := message.([]byte)
+	if !ok {
+		return nil, errors.New("invalid object type inside the queue")
+	}
+
+	err := json.Unmarshal(t, &orderEntity)
 	if err != nil {
 		metrics.ProcessingErrors.Inc()
 		return nil, err

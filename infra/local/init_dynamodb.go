@@ -28,7 +28,7 @@ func main() {
 	svc := dynamodb.New(sess)
 
 	// Create Wallets table
-	_, err := svc.CreateTable(&dynamodb.CreateTableInput{
+	_, _ = svc.CreateTable(&dynamodb.CreateTableInput{
 		TableName: aws.String(walletsTable),
 		AttributeDefinitions: []*dynamodb.AttributeDefinition{
 			{
@@ -47,12 +47,9 @@ func main() {
 			WriteCapacityUnits: aws.Int64(5),
 		},
 	})
-	if err != nil {
-		log.Fatalf("Got error calling CreateTable: %s", err)
-	}
 
 	// Create Orders table
-	_, err = svc.CreateTable(&dynamodb.CreateTableInput{
+	_, _ = svc.CreateTable(&dynamodb.CreateTableInput{
 		TableName: aws.String(ordersTable),
 		AttributeDefinitions: []*dynamodb.AttributeDefinition{
 			{
@@ -71,9 +68,6 @@ func main() {
 			WriteCapacityUnits: aws.Int64(5),
 		},
 	})
-	if err != nil {
-		log.Fatalf("Got error calling CreateTable: %s", err)
-	}
 
 	log.Println("Tables created successfully")
 }
