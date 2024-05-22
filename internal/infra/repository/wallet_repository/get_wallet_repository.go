@@ -11,13 +11,24 @@ import (
 	"os"
 )
 
-func (wr *walletRepository) GetWallet(userId string) (*wallet.Wallet, error) {
+func (wr *walletRepository) GetWalletBalance(userID string) (*wallet.Wallet, bool) {
+	wr.Lock()
+	defer wr.Unlock()
+	wallet, exists := wr.wallets[userID]
+	return wallet, exists
+}
+
+func (wr *walletRepository) GetWallet(userID string) (*wallet.Wallet, error) {
+	if walletMemory, exists := wr.GetWalletBalance(userID); exists {
+		return walletMemory, nil
+	}
+
 	tableName := os.Getenv("DYNAMODB_WALLETS_TABLE")
 	input := &dynamodb.GetItemInput{
 		TableName: aws.String(tableName),
 		Key: map[string]*dynamodb.AttributeValue{
 			"UserID": {
-				S: aws.String(userId),
+				S: aws.String(userID),
 			},
 		},
 	}
@@ -27,8 +38,8 @@ func (wr *walletRepository) GetWallet(userId string) (*wallet.Wallet, error) {
 		return nil, err
 	}
 	if result.Item == nil {
-		logger.Warn(fmt.Sprintf("wallet %s not found", userId))
-		return nil, errors.New(fmt.Sprintf("wallet %s not found", userId))
+		logger.Warn(fmt.Sprintf("wallet %s not found", userID))
+		return nil, errors.New(fmt.Sprintf("wallet %s not found", userID))
 	}
 	wallet := new(wallet.Wallet)
 	err = dynamodbattribute.UnmarshalMap(result.Item, wallet)
@@ -36,5 +47,8 @@ func (wr *walletRepository) GetWallet(userId string) (*wallet.Wallet, error) {
 		logger.Error("error trying to unmarshal object for dynamodb", err)
 		return nil, err
 	}
+
+	wr.UpdateWalletBalance(wallet)
+
 	return wallet, nil
 }

@@ -39,13 +39,13 @@ func Info(message string, tags ...zap.Field) {
 }
 
 func Warn(message string, tags ...zap.Field) {
-	log.Info(message, tags...)
+	log.Warn(message, tags...)
 	log.Sync()
 }
 
 func Error(message string, err error, tags ...zap.Field) {
 	tags = append(tags, zap.NamedError("error", err))
-	log.Info(message, tags...)
+	log.Error(message, tags...)
 	log.Sync()
 }
 

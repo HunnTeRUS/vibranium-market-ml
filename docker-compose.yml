@@ -3,15 +3,15 @@ version: '3.8'
 services:
   app:
     build:
-      context: .
       dockerfile: Dockerfile
+      context: .
     ports:
       - "8080:8080"
     env_file:
       - cmd/market-vibranium/.env
     depends_on:
       - localstack
-    command: sh -c "go run infra/local/init_dynamodb.go && /market-vibranium"
+    command: sh -c "/market-vibranium"
 
   localstack:
     image: localstack/localstack
@@ -19,14 +19,18 @@ services:
       - "4566:4566"
       - "4575:4575"
     environment:
-      - SERVICES=sqs,dynamodb,s3
-    command: sh -c "
-        until curl -s http://localhost:4566/health | grep 'running'; do
-        echo 'Waiting for LocalStack to be ready...';
-        sleep 5;
-        done;
-        awslocal s3api create-bucket --bucket orders;
-        exec localstack start
+      - SERVICES=dynamodb,s3
+
+  aws-cli:
+    image: amazon/aws-cli
+    depends_on:
+      - localstack
+    entrypoint: /bin/sh -c
+    command: >
+      "
+        aws --endpoint-url=http://localstack:4566 s3api create-bucket --no-sign-request --bucket orders --region us-east-1
+        aws --endpoint-url=http://localstack:4566 dynamodb create-table --no-sign-request --region us-east-1 --table-name Wallets --attribute-definitions AttributeName=UserID,AttributeType=S --key-schema AttributeName=UserID,KeyType=HASH --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
+        aws --endpoint-url=http://localstack:4566 dynamodb create-table --no-sign-request --region us-east-1 --table-name Orders --attribute-definitions AttributeName=ID,AttributeType=S --key-schema AttributeName=ID,KeyType=HASH --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
       "
 
   prometheus:

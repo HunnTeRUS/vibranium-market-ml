@@ -9,31 +9,40 @@ import (
 )
 
 func (wr *walletRepository) DepositToWallet(userID string, amount float64) error {
-	tableName := os.Getenv("DYNAMODB_WALLETS_TABLE")
-	key := map[string]*dynamodb.AttributeValue{
-		"UserID": {
-			S: aws.String(userID),
-		},
+	wallet, exists := wr.GetWalletBalance(userID)
+	if !exists {
+		return fmt.Errorf("wallet %s not found", userID)
 	}
-	update := map[string]*dynamodb.AttributeValueUpdate{
-		"Balance": {
-			Action: aws.String("ADD"),
-			Value: &dynamodb.AttributeValue{
-				N: aws.String(fmt.Sprintf("%f", amount)),
+
+	wallet.Balance += amount
+	wr.UpdateWalletBalance(wallet)
+
+	go func() {
+		tableName := os.Getenv("DYNAMODB_WALLETS_TABLE")
+		key := map[string]*dynamodb.AttributeValue{
+			"UserID": {
+				S: aws.String(userID),
 			},
-		},
-	}
-	input := &dynamodb.UpdateItemInput{
-		TableName:        aws.String(tableName),
-		Key:              key,
-		AttributeUpdates: update,
-		ReturnValues:     aws.String("UPDATED_NEW"),
-	}
-	_, err := wr.dynamodbConnection.UpdateItem(input)
-	if err != nil {
-		logger.Error("error trying to update object on dynamodb", err)
-		return err
-	}
+		}
+		update := map[string]*dynamodb.AttributeValueUpdate{
+			"Balance": {
+				Action: aws.String("ADD"),
+				Value: &dynamodb.AttributeValue{
+					N: aws.String(fmt.Sprintf("%f", amount)),
+				},
+			},
+		}
+		input := &dynamodb.UpdateItemInput{
+			TableName:        aws.String(tableName),
+			Key:              key,
+			AttributeUpdates: update,
+			ReturnValues:     aws.String("UPDATED_NEW"),
+		}
+		_, err := wr.dynamodbConnection.UpdateItem(input)
+		if err != nil {
+			logger.Error("error trying to update object on dynamodb", err)
+		}
+	}()
 
 	return nil
 }

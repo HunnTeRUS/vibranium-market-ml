@@ -23,6 +23,7 @@ import (
 )
 
 func main() {
+	logger.Info("About to start application")
 	godotenv.Load("cmd/market-vibranium/.env")
 
 	gin.SetMode(gin.ReleaseMode)
@@ -60,6 +61,7 @@ func main() {
 		os.Exit(0)
 	}()
 
+	logger.Info("Application up and running")
 	err := r.Run(":8080")
 	if err != nil {
 		log.Fatal(err)
