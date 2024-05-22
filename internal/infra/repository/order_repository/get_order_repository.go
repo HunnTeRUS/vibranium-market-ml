@@ -12,9 +12,12 @@ import (
 )
 
 func (u *OrderRepository) GetOrder(orderID string) (*order.Order, error) {
+	if orderLocal, exists := u.GetLocalOrder(orderID); exists {
+		return orderLocal, nil
+	}
+
 	tableName := os.Getenv("DYNAMODB_ORDERS_TABLE")
 
-	fmt.Println(orderID)
 	input := &dynamodb.GetItemInput{
 		TableName: aws.String(tableName),
 		Key: map[string]*dynamodb.AttributeValue{
@@ -41,12 +44,23 @@ func (u *OrderRepository) GetOrder(orderID string) (*order.Order, error) {
 		return nil, err
 	}
 
-	return &order.Order{
+	orderEntity := &order.Order{
 		ID:     orderDbEntity.ID,
 		UserID: orderDbEntity.UserID,
 		Type:   orderDbEntity.Type,
 		Amount: orderDbEntity.Amount,
 		Price:  orderDbEntity.Price,
 		Status: orderDbEntity.Status,
-	}, nil
+	}
+
+	u.UpsertLocalOrder(orderEntity)
+
+	return orderEntity, nil
+}
+
+func (u *OrderRepository) GetLocalOrder(orderId string) (*order.Order, bool) {
+	u.Lock()
+	defer u.Unlock()
+	orderLocal, exists := u.orders[orderId]
+	return orderLocal, exists
 }

@@ -10,7 +10,7 @@ services:
     env_file:
       - cmd/market-vibranium/.env
     depends_on:
-      - localstack
+      - aws-cli
     command: sh -c "/market-vibranium"
 
   localstack:

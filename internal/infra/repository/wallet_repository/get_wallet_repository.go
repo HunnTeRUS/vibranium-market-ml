@@ -14,8 +14,8 @@ import (
 func (wr *walletRepository) GetWalletBalance(userID string) (*wallet.Wallet, bool) {
 	wr.Lock()
 	defer wr.Unlock()
-	wallet, exists := wr.wallets[userID]
-	return wallet, exists
+	walletLocal, exists := wr.wallets[userID]
+	return walletLocal, exists
 }
 
 func (wr *walletRepository) GetWallet(userID string) (*wallet.Wallet, error) {
