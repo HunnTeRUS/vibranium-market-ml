@@ -11,7 +11,6 @@ func (ou *OrderUsecase) GetOrder(orderID string) (*OrderOutputDTO, error) {
 			Amount: value.Amount,
 			Price:  value.Price,
 			Status: value.Status,
-			Symbol: value.Symbol,
 		}, nil
 	}
 
@@ -28,6 +27,5 @@ func (ou *OrderUsecase) GetOrder(orderID string) (*OrderOutputDTO, error) {
 		Amount: orderEntity.Amount,
 		Price:  orderEntity.Price,
 		Status: orderEntity.Status,
-		Symbol: orderEntity.Symbol,
 	}, nil
 }

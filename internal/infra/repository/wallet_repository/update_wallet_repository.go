@@ -28,6 +28,8 @@ func (wr *walletRepository) UpdateWallet(wallet *wallet.Wallet) error {
 
 func (wr *walletRepository) UpdateLocalWalletReference(wallet *wallet.Wallet) {
 	wr.Lock()
-	defer wr.Unlock()
-	wr.wallets[wallet.UserID] = wallet
+	if wallet != nil {
+		wr.wallets[wallet.UserID] = wallet
+	}
+	wr.Unlock()
 }

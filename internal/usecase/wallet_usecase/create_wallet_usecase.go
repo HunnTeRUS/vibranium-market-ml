@@ -6,8 +6,9 @@ import (
 )
 
 type WalletDepositInputDTO struct {
-	UserID string  `json:"userId"`
-	Amount float64 `json:"amount"`
+	UserID    string  `json:"userId"`
+	Amount    float64 `json:"amount"`
+	Vibranium int     `json:"vibranium"`
 }
 
 type WalletOuputDTO struct {
@@ -18,7 +19,7 @@ type WalletOuputDTO struct {
 
 type WalletUsecaseInterface interface {
 	CreateWallet() (*WalletOuputDTO, error)
-	DepositWallet(userId string, amount float64) error
+	DepositWallet(userId string, amount float64, vibranium int) error
 	GetWallet(userId string) (*WalletOuputDTO, error)
 }
 

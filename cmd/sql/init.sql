@@ -5,8 +5,7 @@ CREATE TABLE IF NOT EXISTS orders (
     amount INT NOT NULL,
     price DECIMAL(10,2) NOT NULL,
     status VARCHAR(255) NOT NULL,
-    symbol VARCHAR(255) NOT NULL,
-    INDEX idx_orders_symbol_status_type (symbol, status, type),
+    INDEX idx_orders_status_type (status, type),
     INDEX idx_orders_orderId (orderId)
 );
 

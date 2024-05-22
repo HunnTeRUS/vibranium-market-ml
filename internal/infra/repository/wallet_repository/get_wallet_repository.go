@@ -16,7 +16,7 @@ func (wr *walletRepository) GetWalletBalance(userID string) (*wallet.Wallet, boo
 }
 
 func (wr *walletRepository) GetWallet(userID string) (*wallet.Wallet, error) {
-	stmt, err := wr.dbConnection.Prepare("SELECT * FROM wallet WHERE userId = ?")
+	stmt, err := wr.dbConnection.Prepare("SELECT userId, balance, vibranium FROM wallet WHERE userId = ?")
 	if err != nil {
 		return nil, err
 	}

@@ -38,14 +38,14 @@ func (u *OrderRepository) worker() {
 
 func (u *OrderRepository) upsertOrderInDB(order *order.Order) {
 	if orderStored, _ := u.GetOrder(order.ID); orderStored == nil {
-		stmt, err := u.dbConnection.Prepare("INSERT INTO orders (orderId, userId, type, amount, price, status, symbol) VALUES (?, ?, ?, ?, ?, ?, ?)")
+		stmt, err := u.dbConnection.Prepare("INSERT INTO orders (orderId, userId, type, amount, price, status) VALUES (?, ?, ?, ?, ?, ?)")
 		if err != nil {
 			log.Println("error trying to prepare insert statement", err)
 			return
 		}
 		defer stmt.Close()
 
-		_, err = stmt.Exec(order.ID, order.UserID, order.Type, order.Amount, order.Price, order.Status, order.Symbol)
+		_, err = stmt.Exec(order.ID, order.UserID, order.Type, order.Amount, order.Price, order.Status)
 		if err != nil {
 			log.Println("error trying to insert order", err)
 			return

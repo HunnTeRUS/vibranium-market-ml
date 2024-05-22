@@ -21,7 +21,6 @@ type Order struct {
 	Type   int
 	Amount int
 	Price  float64
-	Symbol string
 	Status string
 }
 
@@ -29,7 +28,7 @@ type OrderRepositoryInterface interface {
 	UpsertOrder(order *Order)
 	GetOrder(orderID string) (*Order, error)
 	GetMemOrder(orderId string) (*Order, bool)
-	GetPendingOrders(symbol string, orderType int) ([]*Order, error)
+	GetPendingOrders(orderType int) ([]*Order, error)
 }
 
 type OrderQueueInterface interface {
@@ -55,7 +54,7 @@ func (o *Order) CancelOrder(orderRepositoryInterface OrderRepositoryInterface, r
 	return errors.New(reason)
 }
 
-func NewOrder(userID string, orderType int, amount int, price float64, symbol string) (*Order, error) {
+func NewOrder(userID string, orderType int, amount int, price float64) (*Order, error) {
 	if orderType != OrderTypeBuy && orderType != OrderTypeSell {
 		return nil, errors.New("invalid order type")
 	}
@@ -65,9 +64,6 @@ func NewOrder(userID string, orderType int, amount int, price float64, symbol st
 	if price <= 0 {
 		return nil, errors.New("invalid price value")
 	}
-	if len(symbol) != 3 {
-		return nil, errors.New("invalid stock name")
-	}
 
 	return &Order{
 		ID:     uuid.New().String(),
@@ -75,7 +71,6 @@ func NewOrder(userID string, orderType int, amount int, price float64, symbol st
 		Type:   orderType,
 		Amount: amount,
 		Price:  price,
-		Symbol: symbol,
 		Status: OrderStatusPending,
 	}, nil
 }

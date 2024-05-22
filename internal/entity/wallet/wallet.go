@@ -19,13 +19,17 @@ func NewWallet() *Wallet {
 	}
 }
 
-func ValidateDeposit(userId string, amount float64) error {
+func ValidateDeposit(userId string, amount float64, vibranium int) error {
 	if uuid.Validate(userId) != nil {
 		return errors.New("invalid userId value")
 	}
 
-	if amount <= 0 {
-		return errors.New("it's not allowed to deposit 0 in value")
+	if amount < 0 {
+		return errors.New("it's not allowed to deposit less than 0 in balance value")
+	}
+
+	if vibranium < 0 {
+		return errors.New("it's not allowed to deposit less than 0 in vibranium amount ")
 	}
 
 	return nil
@@ -49,7 +53,7 @@ func (wl *Wallet) CreditBalance(amount float64) {
 
 type WalletRepositoryInterface interface {
 	CreateWallet(wallet *Wallet) error
-	DepositToWallet(userID string, amount float64) error
+	DepositToWallet(userID string, amount float64, vibranium int) error
 	GetWallet(userId string) (*Wallet, error)
 	UpdateWallet(wallet *Wallet) error
 }

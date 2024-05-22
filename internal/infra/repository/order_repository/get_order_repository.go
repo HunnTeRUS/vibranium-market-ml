@@ -4,12 +4,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 )
 
 func (u *OrderRepository) GetOrder(orderID string) (*order.Order, error) {
-	stmt, err := u.dbConnection.Prepare(`SELECT orderId, userId, type, amount, price, status, symbol FROM orders WHERE orderId = ?`)
+	stmt, err := u.dbConnection.Prepare(`SELECT orderId, userId, type, amount, price, status FROM orders WHERE orderId = ?`)
 	if err != nil {
 		return nil, err
 	}
@@ -18,28 +17,25 @@ func (u *OrderRepository) GetOrder(orderID string) (*order.Order, error) {
 	row := stmt.QueryRow(orderID)
 
 	var order order.Order
-	err = row.Scan(&order.ID, &order.UserID, &order.Type, &order.Amount, &order.Price, &order.Status, &order.Symbol)
+	err = row.Scan(&order.ID, &order.UserID, &order.Type, &order.Amount, &order.Price, &order.Status)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			logger.Warn(fmt.Sprintf("order %s not found", orderID))
 			return nil, errors.New(fmt.Sprintf("order %s not found", orderID))
 		}
 		return nil, err
 	}
 
-	u.UpsertLocalOrder(&order)
-
 	return &order, nil
 }
 
-func (u *OrderRepository) GetPendingOrders(symbol string, orderType int) ([]*order.Order, error) {
-	stmt, err := u.dbConnection.Prepare("SELECT orderId, userId, type, amount, price, status, symbol FROM orders WHERE symbol = ? AND type = ? AND status = ?")
+func (u *OrderRepository) GetPendingOrders(orderType int) ([]*order.Order, error) {
+	stmt, err := u.dbConnection.Prepare("SELECT orderId, userId, type, amount, price, status FROM orders WHERE type = ? AND status = ?")
 	if err != nil {
 		return nil, err
 	}
 	defer stmt.Close()
 
-	rows, err := stmt.Query(symbol, orderType, order.OrderStatusPending)
+	rows, err := stmt.Query(orderType, order.OrderStatusPending)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +46,7 @@ func (u *OrderRepository) GetPendingOrders(symbol string, orderType int) ([]*ord
 		var order order.Order
 
 		err := rows.Scan(&order.ID, &order.UserID, &order.Type,
-			&order.Amount, &order.Price, &order.Status, &order.Symbol)
+			&order.Amount, &order.Price, &order.Status)
 		if err != nil {
 			return nil, err
 		}
