@@ -1,61 +1,67 @@
 package order_repository
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"os"
 )
 
 func (u *OrderRepository) GetOrder(orderID string) (*order.Order, error) {
-	if orderLocal, exists := u.GetLocalOrder(orderID); exists {
-		return orderLocal, nil
-	}
-
-	tableName := os.Getenv("DYNAMODB_ORDERS_TABLE")
-
-	input := &dynamodb.GetItemInput{
-		TableName: aws.String(tableName),
-		Key: map[string]*dynamodb.AttributeValue{
-			"ID": {
-				S: aws.String(orderID),
-			},
-		},
-	}
-
-	result, err := u.dynamodbConnection.GetItem(input)
+	stmt, err := u.dbConnection.Prepare("SELECT * FROM orders WHERE id = ?")
 	if err != nil {
-		logger.Error("Error trying to get item from dynamodb", err)
 		return nil, err
 	}
-	if result.Item == nil {
-		logger.Warn(fmt.Sprintf("order %s was not found", orderID))
-		return nil, errors.New(fmt.Sprintf("order %s was not found", orderID))
-	}
+	defer stmt.Close()
 
-	orderDbEntity := new(OrderDynamoDBEntity)
-	err = dynamodbattribute.UnmarshalMap(result.Item, orderDbEntity)
+	row := stmt.QueryRow(orderID)
+
+	var order order.Order
+	err = row.Scan(&order.ID, &order.UserID, &order.Type, &order.Amount, &order.Price, &order.Status, &order.Symbol)
 	if err != nil {
-		logger.Error("Error trying to unmarshal object from dynamodb", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			logger.Warn(fmt.Sprintf("order %s not found", orderID))
+			return nil, errors.New(fmt.Sprintf("order %s not found", orderID))
+		}
 		return nil, err
 	}
 
-	orderEntity := &order.Order{
-		ID:     orderDbEntity.ID,
-		UserID: orderDbEntity.UserID,
-		Type:   orderDbEntity.Type,
-		Amount: orderDbEntity.Amount,
-		Price:  orderDbEntity.Price,
-		Status: orderDbEntity.Status,
+	u.UpsertLocalOrder(&order)
+
+	return &order, nil
+}
+
+func (u *OrderRepository) GetPendingOrders(symbol string, orderType int) ([]*Order, error) {
+	stmt, err := u.dbConnection.Prepare("SELECT * FROM orders WHERE symbol = ? AND type = ? AND status = ?")
+	if err != nil {
+		return nil, err
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query(symbol, orderType, order.OrderStatusPending)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []*order.Order
+	for rows.Next() {
+		var order order.Order
+
+		err := rows.Scan(&order.ID, &order.UserID, &order.Symbol, &order.Type,
+			&order.Amount, &order.Price, &order.Status, &order.Symbol)
+		if err != nil {
+			return nil, err
+		}
+		orders = append(orders, &order)
 	}
 
-	u.UpsertLocalOrder(orderEntity)
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-	return orderEntity, nil
+	return orders, nil
 }
 
 func (u *OrderRepository) GetLocalOrder(orderId string) (*order.Order, bool) {

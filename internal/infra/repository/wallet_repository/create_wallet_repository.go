@@ -1,12 +1,10 @@
 package wallet_repository
 
 import (
+	"database/sql"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"os"
 	"sync"
 )
 
@@ -15,6 +13,7 @@ type walletRepository struct {
 
 	dynamodbConnection *dynamodb.DynamoDB
 	wallets            map[string]*wallet.Wallet
+	dbConnection       *sql.DB
 }
 
 func NewWalletRepository(dynamodbConnection *dynamodb.DynamoDB) *walletRepository {
@@ -25,21 +24,20 @@ func NewWalletRepository(dynamodbConnection *dynamodb.DynamoDB) *walletRepositor
 }
 
 func (wr *walletRepository) CreateWallet(wallet *wallet.Wallet) error {
-	wr.UpdateWalletBalance(wallet)
+	wr.UpdateLocalWalletReference(wallet)
 
 	go func() {
-		tableName := os.Getenv("DYNAMODB_WALLETS_TABLE")
-		item, err := dynamodbattribute.MarshalMap(wallet)
+		stmt, err := wr.dbConnection.Prepare("INSERT INTO wallet (userId, balance, vibranium) VALUES (?, ?, ?)")
 		if err != nil {
-			logger.Error("error trying to marshal object for dynamodb", err)
+			logger.Error("error trying to prepare database query", err)
+			return
 		}
-		input := &dynamodb.PutItemInput{
-			TableName: aws.String(tableName),
-			Item:      item,
-		}
-		_, err = wr.dynamodbConnection.PutItem(input)
+		defer stmt.Close()
+
+		_, err = stmt.Exec(wallet.UserID, wallet.Balance, wallet.Vibranium)
 		if err != nil {
-			logger.Error("error trying to put item in dynamodb", err)
+			logger.Error("error trying to execute database query", err)
+			return
 		}
 	}()
 

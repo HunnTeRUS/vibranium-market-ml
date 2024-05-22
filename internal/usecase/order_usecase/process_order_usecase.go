@@ -1,7 +1,6 @@
 package order_usecase
 
 import (
-	"errors"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
@@ -103,67 +102,88 @@ func (ou *OrderUsecase) ProcessOrder(orderInput *OrderInputDTO) (string, error) 
 func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 	defer metrics.OrderPending.Dec()
 
-	switch orderEntity.Type {
-	case order.OrderTypeBuy:
-		walletEntity, err := ou.walletRepositoryInterface.GetWallet(orderEntity.UserID)
+	matchOrder, err := ou.findMatchingOrder(orderEntity)
+	if err != nil {
+		return err
+	}
+
+	if matchOrder != nil {
+		buyerWallet, err := ou.walletRepositoryInterface.GetWallet(orderEntity.UserID)
 		if err != nil {
 			return err
 		}
-		if walletEntity.Balance < float64(orderEntity.Amount)*orderEntity.Price {
-			orderEntity.Status = order.OrderStatusCanceled
-			metrics.OrderCanceled.Inc()
-			err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
-			if err != nil {
-				logger.Error("action=ExecuteOrder, message=error calling UpsertOrder repository for cancelling order", err)
-				return err
+
+		sellerWallet, err := ou.walletRepositoryInterface.GetWallet(matchOrder.UserID)
+		if err != nil {
+			return err
+		}
+
+		if orderEntity.Type == order.OrderTypeBuy {
+			if buyerWallet.Balance < float64(orderEntity.Amount)*orderEntity.Price {
+				return orderEntity.CancelOrder(ou.orderRepositoryInterface, "insufficient balance")
 			}
 
-			return errors.New("insufficient balance")
-		}
+			buyerWallet.DebitBalance(float64(orderEntity.Amount) * orderEntity.Price)
+			sellerWallet.CreditBalance(float64(orderEntity.Amount) * orderEntity.Price)
 
-		walletEntity.Balance -= float64(orderEntity.Amount) * orderEntity.Price
-		walletEntity.Vibranium += orderEntity.Amount
-
-		err = ou.walletRepositoryInterface.UpdateWallet(walletEntity)
-		if err != nil {
-			return err
-		}
-
-	case order.OrderTypeSell:
-		walletEntity, err := ou.walletRepositoryInterface.GetWallet(orderEntity.UserID)
-		if err != nil {
-			return err
-		}
-
-		if walletEntity.Vibranium < orderEntity.Amount {
-			orderEntity.Status = order.OrderStatusCanceled
-			metrics.OrderCanceled.Inc()
-			err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
-			if err != nil {
-				logger.Error("action=ExecuteOrder, message=error calling UpsertOrder repository for cancelling order", err)
-				return err
+			buyerWallet.CreditVibranium(orderEntity.Amount)
+			sellerWallet.DebitVibranium(orderEntity.Amount)
+		} else if orderEntity.Type == order.OrderTypeSell {
+			if sellerWallet.Vibranium < orderEntity.Amount {
+				return orderEntity.CancelOrder(ou.orderRepositoryInterface, "insufficient vibranium")
 			}
 
-			return errors.New("insufficient vibranium")
+			sellerWallet.DebitVibranium(orderEntity.Amount)
+			buyerWallet.CreditVibranium(orderEntity.Amount)
+
+			sellerWallet.CreditBalance(float64(orderEntity.Amount) * orderEntity.Price)
+			buyerWallet.DebitBalance(float64(orderEntity.Amount) * orderEntity.Price)
 		}
 
-		walletEntity.Vibranium -= orderEntity.Amount
-		walletEntity.Balance += float64(orderEntity.Amount) * orderEntity.Price
-		err = ou.walletRepositoryInterface.UpdateWallet(walletEntity)
+		err = ou.walletRepositoryInterface.UpdateWallet(buyerWallet)
 		if err != nil {
 			logger.Error("action=ExecuteOrder, message=error calling UpdateWallet repository", err)
 			return err
 		}
+
+		err = ou.walletRepositoryInterface.UpdateWallet(sellerWallet)
+		if err != nil {
+			logger.Error("action=ExecuteOrder, message=error calling UpdateWallet repository", err)
+			return err
+		}
+
+		err = matchOrder.CompleteOrder(ou.orderRepositoryInterface)
+		if err != nil {
+			logger.Error("action=ExecuteOrder, message=error calling CompleteOrder repository", err)
+			return err
+		}
 	}
 
-	orderEntity.Status = order.OrderStatusCompleted
-	metrics.OrderProcessed.Inc()
-	err := ou.orderRepositoryInterface.UpsertOrder(orderEntity)
+	return orderEntity.CompleteOrder(ou.orderRepositoryInterface)
+}
+
+func (ou *OrderUsecase) findMatchingOrder(orderEntity *order.Order) (*order.Order, error) {
+	matchType := 0
+	if orderEntity.Type == 1 {
+		matchType = 2
+	} else {
+		matchType = 1
+	}
+
+	orders, err := ou.orderRepositoryInterface.GetPendingOrders(orderEntity.Symbol, matchType)
 	if err != nil {
-		metrics.ProcessingErrors.Inc()
-		logger.Error("action=ExecuteOrder, message=error calling UpsertOrder repository for completing order", err)
-		return err
+		return nil, err
 	}
 
-	return nil
+	for _, o := range orders {
+		if o.UserID == orderEntity.UserID {
+			continue
+		}
+
+		if orderEntity.Price == o.Price && orderEntity.Amount == o.Amount {
+			return o, nil
+		}
+	}
+
+	return nil, nil
 }

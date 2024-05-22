@@ -3,36 +3,30 @@ package wallet_repository
 import (
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"os"
 )
 
 func (wr *walletRepository) UpdateWallet(wallet *wallet.Wallet) error {
-	wr.UpdateWalletBalance(wallet)
+	wr.UpdateLocalWalletReference(wallet)
 
 	go func() {
-		tableName := os.Getenv("DYNAMODB_WALLETS_TABLE")
-		item, err := dynamodbattribute.MarshalMap(wallet)
+		stmt, err := wr.dbConnection.Prepare("UPDATE wallet SET balance = ?, vibranium = ? WHERE userId = ?")
 		if err != nil {
-			logger.Error("error trying to unmarshal object for dynamodb", err)
+			logger.Error("error trying to prepare update statement", err)
+			return
 		}
+		defer stmt.Close()
 
-		input := &dynamodb.PutItemInput{
-			TableName: aws.String(tableName),
-			Item:      item,
-		}
-		_, err = wr.dynamodbConnection.PutItem(input)
+		_, err = stmt.Exec(wallet.Balance, wallet.Vibranium, wallet.UserID)
 		if err != nil {
-			logger.Error("error trying to put object on dynamodb", err)
+			logger.Error("error trying to update wallet", err)
+			return
 		}
 	}()
 
 	return nil
 }
 
-func (wr *walletRepository) UpdateWalletBalance(wallet *wallet.Wallet) {
+func (wr *walletRepository) UpdateLocalWalletReference(wallet *wallet.Wallet) {
 	wr.Lock()
 	defer wr.Unlock()
 	wr.wallets[wallet.UserID] = wallet

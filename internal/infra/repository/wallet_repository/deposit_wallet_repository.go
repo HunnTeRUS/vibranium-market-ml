@@ -3,9 +3,6 @@ package wallet_repository
 import (
 	"fmt"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"os"
 )
 
 func (wr *walletRepository) DepositToWallet(userID string, amount float64) error {
@@ -15,32 +12,35 @@ func (wr *walletRepository) DepositToWallet(userID string, amount float64) error
 	}
 
 	wallet.Balance += amount
-	wr.UpdateWalletBalance(wallet)
+
+	err := wr.UpdateWallet(wallet)
+	if err != nil {
+		return err
+	}
 
 	go func() {
-		tableName := os.Getenv("DYNAMODB_WALLETS_TABLE")
-		key := map[string]*dynamodb.AttributeValue{
-			"UserID": {
-				S: aws.String(userID),
-			},
-		}
-		update := map[string]*dynamodb.AttributeValueUpdate{
-			"Balance": {
-				Action: aws.String("ADD"),
-				Value: &dynamodb.AttributeValue{
-					N: aws.String(fmt.Sprintf("%f", amount)),
-				},
-			},
-		}
-		input := &dynamodb.UpdateItemInput{
-			TableName:        aws.String(tableName),
-			Key:              key,
-			AttributeUpdates: update,
-			ReturnValues:     aws.String("UPDATED_NEW"),
-		}
-		_, err := wr.dynamodbConnection.UpdateItem(input)
+		stmt, err := wr.dbConnection.Prepare("UPDATE wallet SET balance = ? WHERE userId = ?")
 		if err != nil {
-			logger.Error("error trying to update object on dynamodb", err)
+			logger.Error("error trying to prepare sql statement", err)
+			return
+		}
+		defer stmt.Close()
+
+		result, err := stmt.Exec(wallet.Balance, userID)
+		if err != nil {
+			logger.Error("error trying to execute sql statement", err)
+			return
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			logger.Error("error trying to validate rows affected by database", err)
+			return
+		}
+
+		if rowsAffected == 0 {
+			logger.Error(fmt.Sprintf("wallet %s not found", userID), err)
+			return
 		}
 	}()
 

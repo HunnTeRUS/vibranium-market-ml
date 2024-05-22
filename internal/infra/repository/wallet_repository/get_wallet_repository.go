@@ -1,14 +1,11 @@
 package wallet_repository
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"os"
 )
 
 func (wr *walletRepository) GetWalletBalance(userID string) (*wallet.Wallet, bool) {
@@ -19,36 +16,25 @@ func (wr *walletRepository) GetWalletBalance(userID string) (*wallet.Wallet, boo
 }
 
 func (wr *walletRepository) GetWallet(userID string) (*wallet.Wallet, error) {
-	if walletMemory, exists := wr.GetWalletBalance(userID); exists {
-		return walletMemory, nil
-	}
-
-	tableName := os.Getenv("DYNAMODB_WALLETS_TABLE")
-	input := &dynamodb.GetItemInput{
-		TableName: aws.String(tableName),
-		Key: map[string]*dynamodb.AttributeValue{
-			"UserID": {
-				S: aws.String(userID),
-			},
-		},
-	}
-	result, err := wr.dynamodbConnection.GetItem(input)
+	stmt, err := wr.dbConnection.Prepare("SELECT * FROM wallet WHERE userId = ?")
 	if err != nil {
-		logger.Error("error trying to get object from", err)
 		return nil, err
 	}
-	if result.Item == nil {
-		logger.Warn(fmt.Sprintf("wallet %s not found", userID))
-		return nil, errors.New(fmt.Sprintf("wallet %s not found", userID))
-	}
-	wallet := new(wallet.Wallet)
-	err = dynamodbattribute.UnmarshalMap(result.Item, wallet)
+	defer stmt.Close()
+
+	row := stmt.QueryRow(userID)
+
+	var wallet wallet.Wallet
+	err = row.Scan(&wallet.UserID, &wallet.Balance, &wallet.Vibranium)
 	if err != nil {
-		logger.Error("error trying to unmarshal object for dynamodb", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			logger.Warn(fmt.Sprintf("wallet %s not found", userID))
+			return nil, errors.New(fmt.Sprintf("wallet %s not found", userID))
+		}
 		return nil, err
 	}
 
-	wr.UpdateWalletBalance(wallet)
+	wr.UpdateLocalWalletReference(&wallet)
 
-	return wallet, nil
+	return &wallet, nil
 }

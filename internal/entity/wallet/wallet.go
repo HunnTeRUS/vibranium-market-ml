@@ -31,6 +31,22 @@ func ValidateDeposit(userId string, amount float64) error {
 	return nil
 }
 
+func (wl *Wallet) DebitVibranium(amount int) {
+	wl.Vibranium -= amount
+}
+
+func (wl *Wallet) CreditVibranium(amount int) {
+	wl.Vibranium += amount
+}
+
+func (wl *Wallet) DebitBalance(amount float64) {
+	wl.Balance -= amount
+}
+
+func (wl *Wallet) CreditBalance(amount float64) {
+	wl.Balance += amount
+}
+
 type WalletRepositoryInterface interface {
 	CreateWallet(wallet *Wallet) error
 	DepositToWallet(userID string, amount float64) error
