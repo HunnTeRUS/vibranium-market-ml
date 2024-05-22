@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 func InitDB() *sql.DB {
@@ -25,6 +26,10 @@ func InitDB() *sql.DB {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	db.SetMaxOpenConns(5500)
+	db.SetMaxIdleConns(500)
+	db.SetConnMaxLifetime(time.Minute * 10)
 
 	return db
 }
