@@ -1,37 +1,36 @@
 version: '3.8'
 
 services:
-  app:
-    build:
-      dockerfile: Dockerfile
-      context: .
-    ports:
-      - "8080:8080"
+#  app:
+#    build:
+#      dockerfile: Dockerfile
+#      context: .
+#    ports:
+#      - "8080:8080"
+#    env_file:
+#      - cmd/market-vibranium/.env
+#    depends_on:
+#      - db
+#    command: sh -c "/market-vibranium"
+#    volumes:
+#      - ./snapshots:/snapshots
+#    networks:
+#      - localNetwork
+
+  db:
+    image: mysql:8.4.0
+    restart: always
     env_file:
       - cmd/market-vibranium/.env
-    depends_on:
-      - aws-cli
-    command: sh -c "/market-vibranium"
-
-  localstack:
-    image: localstack/localstack
     ports:
-      - "4566:4566"
-      - "4575:4575"
-    environment:
-      - SERVICES=dynamodb,s3
-
-  aws-cli:
-    image: amazon/aws-cli
-    depends_on:
-      - localstack
-    entrypoint: /bin/sh -c
-    command: >
-      "
-        aws --endpoint-url=http://localstack:4566 s3api create-bucket --no-sign-request --bucket orders --region us-east-1
-        aws --endpoint-url=http://localstack:4566 dynamodb create-table --no-sign-request --region us-east-1 --table-name Wallets --attribute-definitions AttributeName=UserID,AttributeType=S --key-schema AttributeName=UserID,KeyType=HASH --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
-        aws --endpoint-url=http://localstack:4566 dynamodb create-table --no-sign-request --region us-east-1 --table-name Orders --attribute-definitions AttributeName=ID,AttributeType=S --key-schema AttributeName=ID,KeyType=HASH --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
-      "
+      - '3306:3306'
+    expose:
+      - '3306'
+    volumes:
+      - my-db:/var/lib/mysql
+      - ./cmd/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - localNetwork
 
   prometheus:
     image: prom/prometheus
@@ -41,6 +40,8 @@ services:
       - "9090:9090"
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
+    networks:
+      - localNetwork
 
   grafana:
     image: grafana/grafana
@@ -53,6 +54,13 @@ services:
       - ./provisioning/datasources:/etc/grafana/provisioning/datasources
       - ./provisioning/dashboards:/etc/grafana/provisioning/dashboards
       - ./provisioning/dashboards_json:/var/lib/grafana/dashboards
+    networks:
+      - localNetwork
+
+networks:
+  localNetwork:
+    driver: bridge
 
 volumes:
   grafana-storage:
+  my-db:

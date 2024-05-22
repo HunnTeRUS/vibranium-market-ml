@@ -1,8 +1,9 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
-	dynamodbConn "github.com/HunnTeRUS/vibranium-market-ml/config/database/dynamodb"
+	"github.com/HunnTeRUS/vibranium-market-ml/config/database/mysql"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/api/web/order_controller"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/api/web/wallet_controller"
@@ -11,8 +12,8 @@ import (
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/repository/wallet_repository"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/usecase/order_usecase"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/usecase/wallet_usecase"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/gin-gonic/gin"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
@@ -28,9 +29,10 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 
-	dynamodbClient := dynamodbConn.InitDB()
+	dbClient := mysql.InitDB()
+	defer dbClient.Close()
 
-	walletController, orderController, orderQueue := initDependencies(dynamodbClient)
+	walletController, orderController, orderQueue := initDependencies(dbClient)
 
 	r := gin.Default()
 
@@ -53,7 +55,7 @@ func main() {
 
 		err := orderQueue.SaveSnapshot()
 		if err != nil {
-			logger.Error("Failed to save snapshot to S3:", err)
+			logger.Error("Failed to save snapshot:", err)
 		} else {
 			logger.Info("Snapshot saved successfully.")
 		}
@@ -70,16 +72,16 @@ func main() {
 }
 
 func initDependencies(
-	dynamoDbConnection *dynamodb.DynamoDB) (
+	dbConnection *sql.DB) (
 	walletController *wallet_controller.WalletController,
 	orderController *order_controller.OrderController,
 	orderQueue *order_queue.OrderQueue) {
 
-	walletRepository := wallet_repository.NewWalletRepository(dynamoDbConnection)
+	walletRepository := wallet_repository.NewWalletRepository(dbConnection)
 	orderQueue = order_queue.NewOrderQueue(1024)
 
 	orderUsecase := order_usecase.NewOrderUsecase(
-		order_repository.NewOrderRepository(dynamoDbConnection),
+		order_repository.NewOrderRepository(dbConnection),
 		walletRepository,
 		orderQueue)
 

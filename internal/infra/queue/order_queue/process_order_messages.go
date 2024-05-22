@@ -45,12 +45,7 @@ func (q *OrderQueue) DequeueOrder() (*order.Order, error) {
 	}
 
 	var orderEntity order.Order
-	t, ok := message.([]byte)
-	if !ok {
-		return nil, errors.New("invalid object type inside the queue")
-	}
-
-	err := json.Unmarshal(t, &orderEntity)
+	err := json.Unmarshal(message, &orderEntity)
 	if err != nil {
 		metrics.ProcessingErrors.Inc()
 		return nil, err
@@ -62,9 +57,9 @@ func (q *OrderQueue) DequeueOrder() (*order.Order, error) {
 }
 
 func (q *OrderQueue) SaveSnapshot() error {
-	return q.disruptor.SaveSnapshotToS3()
+	return q.disruptor.SaveSnapshotToFile()
 }
 
 func (q *OrderQueue) LoadSnapshot() error {
-	return q.disruptor.LoadSnapshotFromS3()
+	return q.disruptor.LoadSnapshotFromFile()
 }

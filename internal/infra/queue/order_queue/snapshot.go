@@ -5,18 +5,15 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 )
 
-func (d *Disruptor) SaveSnapshotToS3() error {
-	bucket := os.Getenv("S3_BUCKET")
-	keyPrefix := os.Getenv("S3_KEY_PREFIX")
-	if bucket == "" || keyPrefix == "" {
-		return errors.New("S3_BUCKET or S3_KEY_PREFIX environment variable is not set")
+func (d *Disruptor) SaveSnapshotToFile() error {
+	snapshotDir := os.Getenv("SNAPSHOT_DIR")
+	if snapshotDir == "" {
+		return errors.New("SNAPSHOT_DIR environment variable is not set")
 	}
 
 	d.mu.Lock()
@@ -28,89 +25,72 @@ func (d *Disruptor) SaveSnapshotToS3() error {
 	if err != nil {
 		return err
 	}
+	err = encoder.Encode(d.writeCursor)
+	if err != nil {
+		return err
+	}
+	err = encoder.Encode(d.readCursor)
+	if err != nil {
+		return err
+	}
 
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(os.Getenv("AWS_REGION")),
-	}))
-	svc := s3.New(sess)
-	key := fmt.Sprintf("%s/snapshot-%d.gob", keyPrefix, atomic.LoadInt64(&d.writeCursor))
-	_, err = svc.PutObject(&s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-		Body:   bytes.NewReader(buffer.Bytes()),
-	})
-	return err
+	snapshotPath := filepath.Join(snapshotDir, fmt.Sprintf("snapshot-%d.gob", atomic.LoadInt64(&d.writeCursor)))
+	err = os.WriteFile(snapshotPath, buffer.Bytes(), 0644)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (d *Disruptor) LoadSnapshotFromS3() error {
-	bucket := os.Getenv("S3_BUCKET")
-	keyPrefix := os.Getenv("S3_KEY_PREFIX")
-	if bucket == "" || keyPrefix == "" {
-		return errors.New("S3_BUCKET or S3_KEY_PREFIX environment variable is not set")
+func (d *Disruptor) LoadSnapshotFromFile() error {
+	snapshotDir := os.Getenv("SNAPSHOT_DIR")
+	if snapshotDir == "" {
+		return errors.New("SNAPSHOT_DIR environment variable is not set")
 	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(os.Getenv("AWS_REGION")),
-	}))
-	svc := s3.New(sess)
-
-	listObjectsOutput, err := svc.ListObjectsV2(&s3.ListObjectsV2Input{
-		Bucket: aws.String(bucket),
-		Prefix: aws.String(keyPrefix),
-	})
+	entries, err := os.ReadDir(snapshotDir)
 	if err != nil {
 		return err
 	}
 
-	if len(listObjectsOutput.Contents) == 0 {
-		return errors.New("no snapshots found in S3")
+	if len(entries) == 0 {
+		return errors.New("no snapshots found in the snapshot directory")
 	}
 
-	for _, object := range listObjectsOutput.Contents {
-		_, err := svc.PutObjectTagging(&s3.PutObjectTaggingInput{
-			Bucket: aws.String(bucket),
-			Key:    object.Key,
-			Tagging: &s3.Tagging{
-				TagSet: []*s3.Tag{
-					{
-						Key:   aws.String("in-use"),
-						Value: aws.String("true"),
-					},
-				},
-			},
-		})
-		if err != nil {
-			continue
-		}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			snapshotPath := filepath.Join(snapshotDir, entry.Name())
+			file, err := os.Open(snapshotPath)
+			if err != nil {
+				continue
+			}
+			defer file.Close()
 
-		result, err := svc.GetObject(&s3.GetObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    object.Key,
-		})
-		if err != nil {
-			return err
-		}
-		defer result.Body.Close()
+			decoder := gob.NewDecoder(file)
+			err = decoder.Decode(&d.buffer)
+			if err != nil {
+				return err
+			}
+			err = decoder.Decode(&d.writeCursor)
+			if err != nil {
+				return err
+			}
+			err = decoder.Decode(&d.readCursor)
+			if err != nil {
+				return err
+			}
 
-		decoder := gob.NewDecoder(result.Body)
-		err = decoder.Decode(&d.buffer)
-		if err != nil {
-			return err
-		}
+			if err != nil {
+				return err
+			}
 
-		_, err = svc.DeleteObject(&s3.DeleteObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    object.Key,
-		})
-		if err != nil {
-			return err
+			return nil
 		}
-
-		return nil
 	}
 
-	return errors.New("no available snapshots found in S3")
+	return errors.New("no available snapshots found in the snapshot directory")
 }

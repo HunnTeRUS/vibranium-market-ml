@@ -2,7 +2,6 @@ package order
 
 import (
 	"errors"
-	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/metrics"
 	"github.com/google/uuid"
 )
@@ -27,8 +26,9 @@ type Order struct {
 }
 
 type OrderRepositoryInterface interface {
-	UpsertOrder(order *Order) error
+	UpsertOrder(order *Order)
 	GetOrder(orderID string) (*Order, error)
+	GetMemOrder(orderId string) (*Order, bool)
 	GetPendingOrders(symbol string, orderType int) ([]*Order, error)
 }
 
@@ -41,13 +41,8 @@ func (o *Order) CompleteOrder(orderRepositoryInterface OrderRepositoryInterface)
 	o.Status = OrderStatusCompleted
 
 	metrics.OrderProcessed.Inc()
-	err := orderRepositoryInterface.UpsertOrder(o)
-	if err != nil {
-		metrics.ProcessingErrors.Inc()
-		logger.Error("action=ExecuteOrder, "+
-			"message=error calling UpsertOrder repository for completing order", err)
-		return err
-	}
+	orderRepositoryInterface.UpsertOrder(o)
+
 	return nil
 }
 
@@ -55,16 +50,12 @@ func (o *Order) CancelOrder(orderRepositoryInterface OrderRepositoryInterface, r
 	o.Status = OrderStatusCanceled
 
 	metrics.OrderCanceled.Inc()
-	err := orderRepositoryInterface.UpsertOrder(o)
-	if err != nil {
-		logger.Error("action=ExecuteOrder, "+
-			"message=error calling UpsertOrder repository for cancelling order", err)
-		return err
-	}
+	orderRepositoryInterface.UpsertOrder(o)
+
 	return errors.New(reason)
 }
 
-func NewOrder(userID string, orderType int, amount int, price float64) (*Order, error) {
+func NewOrder(userID string, orderType int, amount int, price float64, symbol string) (*Order, error) {
 	if orderType != OrderTypeBuy && orderType != OrderTypeSell {
 		return nil, errors.New("invalid order type")
 	}
@@ -74,6 +65,9 @@ func NewOrder(userID string, orderType int, amount int, price float64) (*Order, 
 	if price <= 0 {
 		return nil, errors.New("invalid price value")
 	}
+	if len(symbol) != 3 {
+		return nil, errors.New("invalid stock name")
+	}
 
 	return &Order{
 		ID:     uuid.New().String(),
@@ -81,6 +75,7 @@ func NewOrder(userID string, orderType int, amount int, price float64) (*Order, 
 		Type:   orderType,
 		Amount: amount,
 		Price:  price,
+		Symbol: symbol,
 		Status: OrderStatusPending,
 	}, nil
 }

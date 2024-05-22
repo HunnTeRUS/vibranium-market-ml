@@ -9,7 +9,7 @@ import (
 )
 
 func (u *OrderRepository) GetOrder(orderID string) (*order.Order, error) {
-	stmt, err := u.dbConnection.Prepare("SELECT * FROM orders WHERE id = ?")
+	stmt, err := u.dbConnection.Prepare(`SELECT orderId, userId, type, amount, price, status, symbol FROM orders WHERE orderId = ?`)
 	if err != nil {
 		return nil, err
 	}
@@ -32,8 +32,8 @@ func (u *OrderRepository) GetOrder(orderID string) (*order.Order, error) {
 	return &order, nil
 }
 
-func (u *OrderRepository) GetPendingOrders(symbol string, orderType int) ([]*Order, error) {
-	stmt, err := u.dbConnection.Prepare("SELECT * FROM orders WHERE symbol = ? AND type = ? AND status = ?")
+func (u *OrderRepository) GetPendingOrders(symbol string, orderType int) ([]*order.Order, error) {
+	stmt, err := u.dbConnection.Prepare("SELECT orderId, userId, type, amount, price, status, symbol FROM orders WHERE symbol = ? AND type = ? AND status = ?")
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func (u *OrderRepository) GetPendingOrders(symbol string, orderType int) ([]*Ord
 	for rows.Next() {
 		var order order.Order
 
-		err := rows.Scan(&order.ID, &order.UserID, &order.Symbol, &order.Type,
+		err := rows.Scan(&order.ID, &order.UserID, &order.Type,
 			&order.Amount, &order.Price, &order.Status, &order.Symbol)
 		if err != nil {
 			return nil, err
@@ -64,9 +64,9 @@ func (u *OrderRepository) GetPendingOrders(symbol string, orderType int) ([]*Ord
 	return orders, nil
 }
 
-func (u *OrderRepository) GetLocalOrder(orderId string) (*order.Order, bool) {
-	u.Lock()
-	defer u.Unlock()
+func (u *OrderRepository) GetMemOrder(orderId string) (*order.Order, bool) {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
 	orderLocal, exists := u.orders[orderId]
 	return orderLocal, exists
 }

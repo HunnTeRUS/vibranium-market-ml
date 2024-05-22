@@ -4,22 +4,20 @@ import (
 	"database/sql"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"sync"
 )
 
 type walletRepository struct {
-	sync.Mutex
+	sync.RWMutex
 
-	dynamodbConnection *dynamodb.DynamoDB
-	wallets            map[string]*wallet.Wallet
-	dbConnection       *sql.DB
+	wallets      map[string]*wallet.Wallet
+	dbConnection *sql.DB
 }
 
-func NewWalletRepository(dynamodbConnection *dynamodb.DynamoDB) *walletRepository {
+func NewWalletRepository(dbConnection *sql.DB) *walletRepository {
 	return &walletRepository{
-		dynamodbConnection: dynamodbConnection,
-		wallets:            make(map[string]*wallet.Wallet),
+		dbConnection: dbConnection,
+		wallets:      make(map[string]*wallet.Wallet),
 	}
 }
 

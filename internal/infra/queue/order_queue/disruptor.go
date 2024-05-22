@@ -10,7 +10,7 @@ import (
 var ErrBufferFull = errors.New("buffer is full")
 
 type Disruptor struct {
-	buffer      []interface{}
+	buffer      [][]byte
 	writeCursor int64
 	readCursor  int64
 	mu          sync.Mutex
@@ -18,10 +18,10 @@ type Disruptor struct {
 
 func NewDisruptor(initialSize int) *Disruptor {
 	d := &Disruptor{
-		buffer: make([]interface{}, initialSize),
+		buffer: make([][]byte, initialSize),
 	}
 
-	err := d.LoadSnapshotFromS3()
+	err := d.LoadSnapshotFromFile()
 	if err != nil {
 		logger.Warn("No previous snapshot found or failed to load")
 	}
@@ -29,7 +29,7 @@ func NewDisruptor(initialSize int) *Disruptor {
 	return d
 }
 
-func (d *Disruptor) Enqueue(value interface{}) error {
+func (d *Disruptor) Enqueue(value []byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -43,7 +43,7 @@ func (d *Disruptor) Enqueue(value interface{}) error {
 	return nil
 }
 
-func (d *Disruptor) Dequeue() interface{} {
+func (d *Disruptor) Dequeue() []byte {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -57,7 +57,7 @@ func (d *Disruptor) Dequeue() interface{} {
 
 func (d *Disruptor) expandBuffer() {
 	newBufferSize := len(d.buffer) * 2
-	newBuffer := make([]interface{}, newBufferSize)
+	newBuffer := make([][]byte, newBufferSize)
 
 	for i := range d.buffer {
 		newBuffer[i] = d.buffer[i]

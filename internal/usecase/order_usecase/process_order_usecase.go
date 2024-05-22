@@ -14,6 +14,7 @@ type OrderInputDTO struct {
 	Type   int     `json:"type"`
 	Amount int     `json:"amount"`
 	Price  float64 `json:"price"`
+	Symbol string  `json:"symbol"`
 }
 
 type OrderOutputDTO struct {
@@ -23,6 +24,7 @@ type OrderOutputDTO struct {
 	Amount int     `json:"amount"`
 	Price  float64 `json:"price"`
 	Status string  `json:"status"`
+	Symbol string  `json:"symbol"`
 }
 
 type OrderUsecaseInterface interface {
@@ -70,7 +72,7 @@ func (ou *OrderUsecase) StartOrderProcessingWorker() {
 
 					err = ou.ExecuteOrder(orderV)
 					if err != nil {
-						logger.Error("action=GetOrderUseCase, message=error trying to process order", err)
+						logger.Error("action=StartOrderProcessingWorker, message=error trying to process order", err)
 					}
 				}(orderUnprocessed)
 			}
@@ -79,16 +81,18 @@ func (ou *OrderUsecase) StartOrderProcessingWorker() {
 }
 
 func (ou *OrderUsecase) ProcessOrder(orderInput *OrderInputDTO) (string, error) {
-	orderEntity, err := order.NewOrder(orderInput.UserID, orderInput.Type, orderInput.Amount, orderInput.Price)
+	orderEntity, err := order.NewOrder(
+		orderInput.UserID,
+		orderInput.Type,
+		orderInput.Amount,
+		orderInput.Price,
+		orderInput.Symbol)
 	if err != nil {
 		return "", err
 	}
 
 	metrics.OrderPending.Inc()
-	err = ou.orderRepositoryInterface.UpsertOrder(orderEntity)
-	if err != nil {
-		return "", err
-	}
+	ou.orderRepositoryInterface.UpsertOrder(orderEntity)
 
 	if err := ou.queueInterface.EnqueueOrder(orderEntity); err != nil {
 		return "", err
@@ -157,17 +161,23 @@ func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 			logger.Error("action=ExecuteOrder, message=error calling CompleteOrder repository", err)
 			return err
 		}
+
+		err = orderEntity.CompleteOrder(ou.orderRepositoryInterface)
+		if err != nil {
+			logger.Error("action=ExecuteOrder, message=error calling CompleteOrder repository", err)
+			return err
+		}
 	}
 
-	return orderEntity.CompleteOrder(ou.orderRepositoryInterface)
+	return nil
 }
 
 func (ou *OrderUsecase) findMatchingOrder(orderEntity *order.Order) (*order.Order, error) {
 	matchType := 0
-	if orderEntity.Type == 1 {
-		matchType = 2
+	if orderEntity.Type == order.OrderTypeBuy {
+		matchType = order.OrderTypeSell
 	} else {
-		matchType = 1
+		matchType = order.OrderTypeBuy
 	}
 
 	orders, err := ou.orderRepositoryInterface.GetPendingOrders(orderEntity.Symbol, matchType)
