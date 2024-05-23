@@ -15,12 +15,13 @@ type OrderInputDTO struct {
 }
 
 type OrderOutputDTO struct {
-	ID     string  `json:"orderId"`
-	UserID string  `json:"userId"`
-	Type   int     `json:"type"`
-	Amount int     `json:"amount"`
-	Price  float64 `json:"price"`
-	Status string  `json:"status"`
+	ID              string  `json:"orderId"`
+	UserID          string  `json:"userId"`
+	Type            int     `json:"type"`
+	Amount          int     `json:"amount"`
+	Price           float64 `json:"price"`
+	Status          string  `json:"status"`
+	AmountRemaining int     `json:"amountRemaining,omitempty"`
 }
 
 type OrderUsecaseInterface interface {
@@ -48,7 +49,6 @@ func NewOrderUsecase(
 
 	return orderUsecaseObj
 }
-
 func (ou *OrderUsecase) StartOrderProcessingWorker() {
 	for {
 		go func() {
@@ -100,55 +100,74 @@ func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 		return err
 	}
 
-	matchOrder, err := ou.findMatchingOrder(orderEntity)
-	if err != nil {
-		return err
-	}
+	var matchOrder *order.Order
+	if orderEntity.Type == order.OrderTypeBuy {
+		matchOrder, err = ou.orderRepositoryInterface.GetSellingMatchingOrder(orderEntity)
+		if err != nil || matchOrder == nil {
+			return err
+		}
 
-	if matchOrder != nil {
-		matchingWallet, err := ou.walletRepositoryInterface.GetWallet(matchOrder.UserID)
+		matchWallet, err := ou.walletRepositoryInterface.GetWallet(matchOrder.UserID)
 		if err != nil {
 			return err
 		}
 
-		if orderEntity.Type == order.OrderTypeBuy {
-			if matchingWallet.Vibranium < orderEntity.Amount {
-				return orderEntity.CancelOrder(ou.orderRepositoryInterface,
-					"insufficient balance or vibranium withing the buyer/seller wallet")
-			}
+		if matchOrder.SellValueRemaining > orderEntity.Amount {
+			matchOrder.SellValueRemaining -= orderEntity.Amount
+			subOrder, _ := order.NewOrder(
+				matchOrder.UserID, matchOrder.Type, orderEntity.Amount, matchOrder.Price)
 
-			actualWallet.DebitBalance(float64(orderEntity.Amount) * orderEntity.Price)
-			matchingWallet.CreditBalance(float64(orderEntity.Amount) * orderEntity.Price)
+			subOrder.CorrelationId = matchOrder.ID
 
-			actualWallet.CreditVibranium(orderEntity.Amount)
-			matchingWallet.DebitVibranium(orderEntity.Amount)
-		} else if orderEntity.Type == order.OrderTypeSell {
-			if matchingWallet.Balance < float64(orderEntity.Amount)*orderEntity.Price {
-				return orderEntity.CancelOrder(ou.orderRepositoryInterface,
-					"insufficient balance or vibranium withing the buyer/seller wallet")
-			}
+			subOrder.CompleteOrder(ou.orderRepositoryInterface)
+			ou.orderRepositoryInterface.UpsertOrder(matchOrder)
+			orderEntity.CompleteOrder(ou.orderRepositoryInterface)
 
-			matchingWallet.DebitVibranium(orderEntity.Amount)
-			actualWallet.CreditVibranium(orderEntity.Amount)
-
-			matchingWallet.CreditBalance(float64(orderEntity.Amount) * orderEntity.Price)
-			actualWallet.DebitBalance(float64(orderEntity.Amount) * orderEntity.Price)
+		} else if matchOrder.SellValueRemaining == orderEntity.Amount {
+			matchOrder.SellValueRemaining = 0
+			matchOrder.CompleteOrder(ou.orderRepositoryInterface)
 		}
 
-		err = ou.walletRepositoryInterface.UpdateWallet(actualWallet)
-		if err != nil {
-			logger.Error("action=ExecuteOrder, message=error calling UpdateWallet repository", err)
-			return err
-		}
+		matchWallet.CreditBalance(float64(orderEntity.Amount) * orderEntity.Price)
+		actualWallet.DebitBalance(float64(orderEntity.Amount) * orderEntity.Price)
+		actualWallet.CreditVibranium(orderEntity.Amount)
+		matchWallet.DebitVibranium(orderEntity.Amount)
 
-		err = ou.walletRepositoryInterface.UpdateWallet(matchingWallet)
-		if err != nil {
-			logger.Error("action=ExecuteOrder, message=error calling UpdateWallet repository", err)
-			return err
-		}
-
-		matchOrder.CompleteOrder(ou.orderRepositoryInterface)
 		orderEntity.CompleteOrder(ou.orderRepositoryInterface)
+	} else {
+		for orderEntity.SellValueRemaining > 0 {
+			matchOrder, err = ou.orderRepositoryInterface.GetBuyingMatchingOrder(orderEntity)
+			if err != nil || matchOrder == nil {
+				return err
+			}
+
+			matchWallet, err := ou.walletRepositoryInterface.GetWallet(matchOrder.UserID)
+			if err != nil {
+				return err
+			}
+
+			if orderEntity.SellValueRemaining > matchOrder.Amount {
+				orderEntity.SellValueRemaining -= matchOrder.Amount
+				subOrder, _ := order.NewOrder(
+					orderEntity.UserID, orderEntity.Type, matchOrder.Amount, orderEntity.Price)
+
+				subOrder.CorrelationId = orderEntity.ID
+
+				ou.orderRepositoryInterface.UpsertOrder(orderEntity)
+				subOrder.CompleteOrder(ou.orderRepositoryInterface)
+
+			} else if matchOrder.Amount == orderEntity.SellValueRemaining {
+				orderEntity.SellValueRemaining = 0
+				orderEntity.CompleteOrder(ou.orderRepositoryInterface)
+			}
+
+			actualWallet.CreditBalance(float64(matchOrder.Amount) * matchOrder.Price)
+			matchWallet.DebitBalance(float64(matchOrder.Amount) * matchOrder.Price)
+			matchWallet.CreditVibranium(matchOrder.Amount)
+			actualWallet.DebitVibranium(matchOrder.Amount)
+
+			matchOrder.CompleteOrder(ou.orderRepositoryInterface)
+		}
 	}
 
 	return nil
@@ -174,13 +193,4 @@ func (ou *OrderUsecase) validateCurrentWalletAndOrder(orderEntity *order.Order) 
 	}
 
 	return actualWallet, nil
-}
-
-func (ou *OrderUsecase) findMatchingOrder(orderEntity *order.Order) (*order.Order, error) {
-	orders, err := ou.orderRepositoryInterface.GetFirstMatchingOrder(orderEntity)
-	if err != nil {
-		return nil, err
-	}
-
-	return orders, nil
 }

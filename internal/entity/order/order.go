@@ -22,12 +22,16 @@ type Order struct {
 	Amount int
 	Price  float64
 	Status string
+
+	SellValueRemaining int
+	CorrelationId      string
 }
 
 type OrderRepositoryInterface interface {
 	UpsertOrder(order *Order)
 	GetMemOrder(orderId string) (*Order, bool)
-	GetFirstMatchingOrder(orderEntity *Order) (*Order, error)
+	GetBuyingMatchingOrder(orderEntity *Order) (*Order, error)
+	GetSellingMatchingOrder(orderEntity *Order) (*Order, error)
 
 	LoadSnapshot() error
 	SaveSnapshot() error
@@ -65,12 +69,18 @@ func NewOrder(userID string, orderType int, amount int, price float64) (*Order, 
 		return nil, errors.New("invalid price value")
 	}
 
-	return &Order{
+	orderValue := &Order{
 		ID:     uuid.New().String(),
 		UserID: userID,
 		Type:   orderType,
 		Amount: amount,
 		Price:  price,
 		Status: OrderStatusPending,
-	}, nil
+	}
+
+	if orderType == OrderTypeSell {
+		orderValue.SellValueRemaining = amount
+	}
+
+	return orderValue, nil
 }

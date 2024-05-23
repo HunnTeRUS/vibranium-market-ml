@@ -2,7 +2,6 @@ package order_repository
 
 import (
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
-	"sync"
 )
 
 const priceBucketSize = 10.0
@@ -12,66 +11,76 @@ func calculateBucket(value, bucketSize float64) int {
 	return int(value / bucketSize)
 }
 
-func (u *OrderRepository) GetFirstMatchingOrder(orderEntity *order.Order) (*order.Order, error) {
-	priceBucket := calculateBucket(orderEntity.Price, priceBucketSize)
-	amountBucket := calculateBucket(float64(orderEntity.Amount), amountBucketSize)
-
-	var cache *sync.Map
-	if orderEntity.Type == order.OrderTypeBuy {
-		cache = u.buyCache
-	} else {
-		cache = u.sellCache
+func (u *OrderRepository) GetBuyingMatchingOrder(orderEntity *order.Order) (*order.Order, error) {
+	if orderEntity.Type != order.OrderTypeSell {
+		return nil, nil
 	}
 
-	cacheKey := (priceBucket << 32) | amountBucket
-	if ordersInterface, ok := cache.Load(cacheKey); ok {
-		if orders, ok := ordersInterface.([]*order.Order); ok && len(orders) > 0 {
-			for _, orderValue := range orders {
-				if orderValue.UserID == orderEntity.UserID {
-					continue
-				}
-				return orderValue, nil
+	var matchingOrder *order.Order
+	priceBucket := calculateBucket(orderEntity.Price, priceBucketSize)
+
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+
+	if buyOrders, exists := u.buyCache[priceBucket]; exists {
+		for _, buyOrder := range buyOrders {
+			if buyOrder.Price == orderEntity.Price && buyOrder.Amount <= orderEntity.SellValueRemaining && buyOrder.UserID != orderEntity.UserID {
+				matchingOrder = buyOrder
+				break
 			}
 		}
 	}
 
-	return nil, nil
+	return matchingOrder, nil
 }
 
-func (u *OrderRepository) addOrderToCache(cache *sync.Map, priceBucket, amountBucket int, o *order.Order) {
-	cacheKey := (priceBucket << 32) | amountBucket
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	if ordersInterface, ok := cache.Load(cacheKey); ok {
-		if orders, ok := ordersInterface.([]*order.Order); ok {
-			cache.Store(cacheKey, append(orders, o))
-			return
+// GetSellingMatchingOrder finds the first sell order that matches the criteria of the buy order
+func (u *OrderRepository) GetSellingMatchingOrder(orderEntity *order.Order) (*order.Order, error) {
+	if orderEntity.Type != order.OrderTypeBuy {
+		return nil, nil
+	}
+
+	var matchingOrder *order.Order
+	priceBucket := calculateBucket(orderEntity.Price, priceBucketSize)
+
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+
+	if sellOrders, exists := u.sellCache[priceBucket]; exists {
+		for _, sellOrder := range sellOrders {
+			if sellOrder.Price == orderEntity.Price && sellOrder.SellValueRemaining >= orderEntity.Amount && sellOrder.UserID != orderEntity.UserID {
+				matchingOrder = sellOrder
+				break
+			}
 		}
 	}
-	cache.Store(cacheKey, []*order.Order{o})
+
+	return matchingOrder, nil
 }
 
-func (u *OrderRepository) removeOrderFromCache(orderType int, price float64, amount int, orderID string) {
-	priceBucket := calculateBucket(price, priceBucketSize)
-	amountBucket := calculateBucket(float64(amount), amountBucketSize)
-
-	var cache *sync.Map
-	if orderType == 1 {
-		cache = u.buyCache
+func (u *OrderRepository) addOrderToCache(cache *map[int][]*order.Order, priceBucket int, o *order.Order) {
+	if orders, exists := (*cache)[priceBucket]; exists {
+		(*cache)[priceBucket] = append(orders, o)
 	} else {
-		cache = u.sellCache
+		(*cache)[priceBucket] = []*order.Order{o}
+	}
+}
+
+func (u *OrderRepository) removeOrderFromCache(orderEntity *order.Order) {
+	priceBucket := calculateBucket(orderEntity.Price, priceBucketSize)
+
+	var cache *map[int][]*order.Order
+	if orderEntity.Type == order.OrderTypeBuy {
+		cache = &u.buyCache
+	} else {
+		cache = &u.sellCache
 	}
 
-	cacheKey := (priceBucket << 32) | amountBucket
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	if ordersInterface, ok := cache.Load(cacheKey); ok {
-		if orders, ok := ordersInterface.([]*order.Order); ok {
-			for i, o := range orders {
-				if o.ID == orderID {
-					cache.Store(cacheKey, append(orders[:i], orders[i+1:]...))
-					return
-				}
+	if orders, exists := (*cache)[priceBucket]; exists {
+		for i, o := range orders {
+			if o.ID == orderEntity.ID {
+				(*cache)[priceBucket] = append(orders[:i], orders[i+1:]...)
+				break
 			}
 		}
 	}
