@@ -1,75 +1,115 @@
 package order_repository
 
 import (
-	"database/sql"
+	"encoding/json"
+	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
-	"log"
+	"os"
 	"sync"
 )
 
 type OrderRepository struct {
-	mu           sync.RWMutex
-	taskQueue    chan *order.Order
-	dbConnection *sql.DB
+	mu        sync.RWMutex
+	taskQueue chan *order.Order
 
-	orders map[string]*order.Order
+	orders    map[string]*order.Order
+	buyCache  *sync.Map
+	sellCache *sync.Map
 }
 
-func NewOrderRepository(dbConnection *sql.DB) *OrderRepository {
+func NewOrderRepository() *OrderRepository {
 	orderRepo := &OrderRepository{
-		dbConnection: dbConnection,
-		orders:       make(map[string]*order.Order),
-		taskQueue:    make(chan *order.Order, 1000),
+		orders:    make(map[string]*order.Order),
+		taskQueue: make(chan *order.Order, 20000),
+		buyCache:  &sync.Map{},
+		sellCache: &sync.Map{},
 	}
-
-	go orderRepo.worker()
 
 	return orderRepo
 }
 
-func (u *OrderRepository) worker() {
-	for {
-		select {
-		case order := <-u.taskQueue:
-			u.upsertOrderInDB(order)
-		}
+func (u *OrderRepository) LoadSnapshot() error {
+	file, err := os.Open(os.Getenv("ORDERS_SNAPSHOT_FILE"))
+	if err != nil {
+		logger.Warn("environment variable ORDERS_SNAPSHOT_FILE not set")
+		return err
 	}
+	defer file.Close()
+
+	data := struct {
+		Orders    map[string]*order.Order   `json:"orders"`
+		BuyCache  map[string][]*order.Order `json:"buy_cache"`
+		SellCache map[string][]*order.Order `json:"sell_cache"`
+	}{}
+
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&data)
+	if err != nil {
+		logger.Warn(err.Error())
+		return err
+	}
+
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	u.orders = data.Orders
+
+	for key, orders := range data.BuyCache {
+		u.buyCache.Store(key, orders)
+	}
+
+	for key, orders := range data.SellCache {
+		u.sellCache.Store(key, orders)
+	}
+
+	return nil
 }
 
-func (u *OrderRepository) upsertOrderInDB(order *order.Order) {
-	if orderStored, _ := u.GetOrder(order.ID); orderStored == nil {
-		stmt, err := u.dbConnection.Prepare("INSERT INTO orders (orderId, userId, type, amount, price, status) VALUES (?, ?, ?, ?, ?, ?)")
-		if err != nil {
-			log.Println("error trying to prepare insert statement", err)
-			return
-		}
-		defer stmt.Close()
+func (u *OrderRepository) SaveSnapshot() error {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
 
-		_, err = stmt.Exec(order.ID, order.UserID, order.Type, order.Amount, order.Price, order.Status)
-		if err != nil {
-			log.Println("error trying to insert order", err)
-			return
-		}
-	} else {
-		stmt, err := u.dbConnection.Prepare("UPDATE orders SET status = ? WHERE orderId = ?")
-		if err != nil {
-			log.Println("error trying to prepare update order", err)
-			return
-		}
-		defer stmt.Close()
+	buyCache := make(map[string][]*order.Order)
+	u.buyCache.Range(func(key, value interface{}) bool {
+		buyCache[key.(string)] = value.([]*order.Order)
+		return true
+	})
 
-		_, err = stmt.Exec(order.Status, order.ID)
-		if err != nil {
-			log.Println("error trying to update order", err)
-			return
-		}
+	sellCache := make(map[string][]*order.Order)
+	u.sellCache.Range(func(key, value interface{}) bool {
+		sellCache[key.(string)] = value.([]*order.Order)
+		return true
+	})
+
+	data := struct {
+		Orders    map[string]*order.Order   `json:"orders,omitempty"`
+		BuyCache  map[string][]*order.Order `json:"buy_cache,omitempty"`
+		SellCache map[string][]*order.Order `json:"sell_cache,omitempty"`
+	}{
+		Orders:    u.orders,
+		BuyCache:  buyCache,
+		SellCache: sellCache,
 	}
+
+	file, err := os.Create(os.Getenv("ORDERS_SNAPSHOT_FILE"))
+	if err != nil {
+		logger.Warn(err.Error())
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	err = encoder.Encode(data)
+	if err != nil {
+		logger.Warn(err.Error())
+		return err
+	}
+
+	return nil
 }
 
 func (u *OrderRepository) UpsertOrder(order *order.Order) {
 	u.UpsertLocalOrder(order)
-
-	u.taskQueue <- order
 }
 
 func (u *OrderRepository) UpsertLocalOrder(orderEntity *order.Order) {

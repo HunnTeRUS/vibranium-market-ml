@@ -1,49 +1,73 @@
 package wallet_repository
 
 import (
-	"database/sql"
+	"encoding/json"
 	"fmt"
-	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
+	"os"
 	"sync"
 )
 
-type walletRepository struct {
+type WalletRepository struct {
 	sync.RWMutex
 
-	wallets      map[string]*wallet.Wallet
-	dbConnection *sql.DB
+	wallets map[string]*wallet.Wallet
 }
 
-func NewWalletRepository(dbConnection *sql.DB) *walletRepository {
-	return &walletRepository{
-		dbConnection: dbConnection,
-		wallets:      make(map[string]*wallet.Wallet),
+func NewWalletRepository() *WalletRepository {
+	return &WalletRepository{
+		wallets: make(map[string]*wallet.Wallet),
 	}
 }
 
-func (wr *walletRepository) CreateWallet(wallet *wallet.Wallet) error {
+func (wr *WalletRepository) CreateWallet(wallet *wallet.Wallet) error {
 	wr.UpdateLocalWalletReference(wallet)
 
-	go func() {
-		walletRegister, err := wr.GetWallet(wallet.UserID)
-		if err != nil && err.Error() == fmt.Sprintf("wallet %s not found", wallet.UserID) {
-			stmt, err := wr.dbConnection.Prepare("INSERT INTO wallet (userId, balance, vibranium) VALUES (?, ?, ?)")
-			if err != nil {
-				logger.Error("error trying to prepare database query", err)
-				return
-			}
-			defer stmt.Close()
+	return nil
+}
 
-			_, err = stmt.Exec(wallet.UserID, wallet.Balance, wallet.Vibranium)
-			if err != nil {
-				logger.Error("error trying to execute database query", err)
-				return
-			}
-		}
+func (wr *WalletRepository) LoadSnapshot() error {
+	file, err := os.Open(os.Getenv("WALLETS_SNAPSHOT_FILE"))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
 
-		wr.UpdateLocalWalletReference(walletRegister)
-	}()
+	wr.Lock()
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&wr.wallets)
+	if err != nil {
+		return err
+	}
+	wr.Unlock()
+
+	return nil
+}
+
+func (wr *WalletRepository) SaveSnapshot() error {
+	if len(wr.wallets) == 0 {
+		return nil
+	}
+
+	walletsSnapshotFile := os.Getenv("WALLETS_SNAPSHOT_FILE")
+	if walletsSnapshotFile == "" {
+		return fmt.Errorf("environment variable WALLETS_SNAPSHOT_FILE not set")
+	}
+
+	wr.RLock()
+	defer wr.RUnlock()
+
+	file, err := os.Create(walletsSnapshotFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	err = encoder.Encode(wr.wallets)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

@@ -1,9 +1,7 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
-	"github.com/HunnTeRUS/vibranium-market-ml/config/database/mysql"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/api/web/order_controller"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/api/web/wallet_controller"
@@ -13,28 +11,53 @@ import (
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/usecase/order_usecase"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/usecase/wallet_usecase"
 	"github.com/gin-gonic/gin"
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"syscall"
 	"time"
 )
 
 func main() {
+	gin.SetMode(gin.ReleaseMode)
+
 	logger.Info("About to start application")
 	godotenv.Load("cmd/market-vibranium/.env")
 
-	gin.SetMode(gin.ReleaseMode)
+	f, err := os.Create("cpu.prof")
+	if err != nil {
+		fmt.Println("could not create CPU profile: ", err)
+		return
+	}
+	defer f.Close()
+	if err := pprof.StartCPUProfile(f); err != nil {
+		fmt.Println("could not start CPU profile: ", err)
+		return
+	}
+	defer pprof.StopCPUProfile()
 
-	dbClient := mysql.InitDB()
-	defer dbClient.Close()
+	walletRepository := wallet_repository.NewWalletRepository()
+	orderQueue := order_queue.NewOrderQueue(20000)
+	orderRepository := order_repository.NewOrderRepository()
 
-	walletController, orderController, orderQueue := initDependencies(dbClient)
+	orderUsecase := order_usecase.NewOrderUsecase(
+		orderRepository,
+		walletRepository,
+		orderQueue)
 
-	r := gin.Default()
+	walletController := wallet_controller.NewWalletController(
+		wallet_usecase.NewWalletUsecase(walletRepository))
+
+	orderController := order_controller.NewOrderController(orderUsecase)
+
+	_ = orderQueue.LoadSnapshot()
+	_ = orderRepository.LoadSnapshot()
+	_ = walletRepository.LoadSnapshot()
+
+	r := gin.New()
 
 	r.POST("/orders", orderController.CreateOrder)
 	r.GET("/orders/:id", orderController.GetOrder)
@@ -43,52 +66,48 @@ func main() {
 	r.POST("/wallets", walletController.CreateWalletController)
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	sigChannel := make(chan os.Signal, 1)
-	signal.Notify(sigChannel, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
-		sig := <-sigChannel
-		logger.Warn(fmt.Sprintf("Received signal: %s. Initiating graceful shutdown...\n", sig))
-
-		logger.Warn("Waiting for 10 seconds to finish processing orders...")
-		time.Sleep(10 * time.Second)
-
-		err := orderQueue.SaveSnapshot()
-		if err != nil {
-			logger.Error("Failed to save snapshot:", err)
-		} else {
-			logger.Info("Snapshot saved successfully.")
-		}
-
-		os.Exit(0)
-	}()
+	go gracefullyShutdown(orderQueue, orderRepository, walletRepository)
 
 	logger.Info("Application up and running")
-	err := r.Run(":8080")
+	err = r.Run(":8080")
 	if err != nil {
 		log.Fatal(err)
 		return
 	}
 }
 
-func initDependencies(
-	dbConnection *sql.DB) (
-	walletController *wallet_controller.WalletController,
-	orderController *order_controller.OrderController,
-	orderQueue *order_queue.OrderQueue) {
+func gracefullyShutdown(
+	orderQueue *order_queue.OrderQueue,
+	orderRepository *order_repository.OrderRepository,
+	walletRepository *wallet_repository.WalletRepository,
+) {
+	sigChannel := make(chan os.Signal, 1)
+	signal.Notify(sigChannel, syscall.SIGINT, syscall.SIGTERM)
 
-	walletRepository := wallet_repository.NewWalletRepository(dbConnection)
-	orderQueue = order_queue.NewOrderQueue(1024)
+	defer os.Exit(0)
 
-	orderUsecase := order_usecase.NewOrderUsecase(
-		order_repository.NewOrderRepository(dbConnection),
-		walletRepository,
-		orderQueue)
+	sig := <-sigChannel
+	logger.Warn(fmt.Sprintf("Received signal: %s. Initiating graceful shutdown...\n", sig))
 
-	walletController = wallet_controller.NewWalletController(
-		wallet_usecase.NewWalletUsecase(walletRepository))
+	logger.Warn("Waiting for 10 seconds to finish processing orders...")
+	time.Sleep(10 * time.Second)
 
-	orderController = order_controller.NewOrderController(orderUsecase)
+	err := orderQueue.SaveSnapshot()
+	if err != nil {
+		logger.Error("Failed to save snapshot:", err)
+	}
 
-	return
+	err = orderRepository.SaveSnapshot()
+	if err != nil {
+		logger.Error("Failed to save snapshot:", err)
+		return
+	}
+
+	err = walletRepository.SaveSnapshot()
+	if err != nil {
+		logger.Error("Failed to save snapshot:", err)
+		return
+	}
+
+	logger.Info("Snapshot saved successfully.")
 }

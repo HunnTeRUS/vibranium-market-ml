@@ -1,15 +1,18 @@
 package order_queue
 
 import (
-	"encoding/json"
 	"errors"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/metrics"
+	"sync"
 )
 
 type OrderQueue struct {
-	disruptor *Disruptor
+	queue      chan *order.Order
+	disruptor  *Disruptor
+	mu         sync.Mutex
+	bufferSize int
 }
 
 func NewOrderQueue(initialSize int) *OrderQueue {
@@ -18,18 +21,22 @@ func NewOrderQueue(initialSize int) *OrderQueue {
 	}
 }
 
+func (q *OrderQueue) QueueLength() int {
+	return len(q.disruptor.queue)
+}
+
 func (q *OrderQueue) EnqueueOrder(order *order.Order) error {
-	orderJSON, err := json.Marshal(order)
-	if err != nil {
-		metrics.ProcessingErrors.Inc()
-		return err
-	}
-	err = q.disruptor.Enqueue(orderJSON)
+	err := q.disruptor.Enqueue(order)
 	if err == ErrBufferFull {
 		metrics.ProcessingErrors.Inc()
 		metrics.BufferFull.Inc()
 		logger.Warn("Buffer is full, expanding buffer and retrying...")
-		err = q.disruptor.Enqueue(orderJSON)
+
+		q.mu.Lock()
+		q.expandBuffer()
+		q.mu.Unlock()
+
+		err = q.disruptor.Enqueue(order)
 		if err != nil {
 			return err
 		}
@@ -44,16 +51,9 @@ func (q *OrderQueue) DequeueOrder() (*order.Order, error) {
 		return nil, errors.New("invalid nil object inside the queue")
 	}
 
-	var orderEntity order.Order
-	err := json.Unmarshal(message, &orderEntity)
-	if err != nil {
-		metrics.ProcessingErrors.Inc()
-		return nil, err
-	}
-
 	metrics.OrdersDequeued.Inc()
 
-	return &orderEntity, nil
+	return message, nil
 }
 
 func (q *OrderQueue) SaveSnapshot() error {

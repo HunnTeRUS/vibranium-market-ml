@@ -5,8 +5,6 @@ import (
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/metrics"
-	"os"
-	"strconv"
 )
 
 type OrderInputDTO struct {
@@ -45,34 +43,27 @@ func NewOrderUsecase(
 		orderRepositoryInterface,
 		queueInterface,
 		walletRepositoryInterface}
-	orderUsecaseObj.StartOrderProcessingWorker()
+
+	go orderUsecaseObj.StartOrderProcessingWorker()
+
 	return orderUsecaseObj
 }
 
 func (ou *OrderUsecase) StartOrderProcessingWorker() {
-	numWorkers, err := strconv.Atoi(os.Getenv("NUM_WORKERS"))
-	if err != nil {
-		numWorkers = 10
-	}
-
-	for i := 0; i < numWorkers; i++ {
+	for {
 		go func() {
-			for {
-				orderUnprocessed, err := ou.queueInterface.DequeueOrder()
-				if err != nil || orderUnprocessed == nil {
-					continue
-				}
+			orderUnprocessed, err := ou.queueInterface.DequeueOrder()
+			if err != nil || orderUnprocessed == nil {
+				return
+			}
 
-				metrics.ConcurrentOrdersProcessing.Inc()
+			metrics.ConcurrentOrdersProcessing.Inc()
 
-				go func(orderV *order.Order) {
-					defer metrics.ConcurrentOrdersProcessing.Dec()
+			defer metrics.ConcurrentOrdersProcessing.Dec()
 
-					err = ou.ExecuteOrder(orderV)
-					if err != nil {
-						logger.Error("action=StartOrderProcessingWorker, message=error trying to process order", err)
-					}
-				}(orderUnprocessed)
+			err = ou.ExecuteOrder(orderUnprocessed)
+			if err != nil {
+				logger.Error("action=StartOrderProcessingWorker, message=error trying to process order", err)
 			}
 		}()
 	}
@@ -156,17 +147,8 @@ func (ou *OrderUsecase) ExecuteOrder(orderEntity *order.Order) error {
 			return err
 		}
 
-		err = matchOrder.CompleteOrder(ou.orderRepositoryInterface)
-		if err != nil {
-			logger.Error("action=ExecuteOrder, message=error calling CompleteOrder repository", err)
-			return err
-		}
-
-		err = orderEntity.CompleteOrder(ou.orderRepositoryInterface)
-		if err != nil {
-			logger.Error("action=ExecuteOrder, message=error calling CompleteOrder repository", err)
-			return err
-		}
+		matchOrder.CompleteOrder(ou.orderRepositoryInterface)
+		orderEntity.CompleteOrder(ou.orderRepositoryInterface)
 	}
 
 	return nil
@@ -195,27 +177,10 @@ func (ou *OrderUsecase) validateCurrentWalletAndOrder(orderEntity *order.Order) 
 }
 
 func (ou *OrderUsecase) findMatchingOrder(orderEntity *order.Order) (*order.Order, error) {
-	matchType := 0
-	if orderEntity.Type == order.OrderTypeBuy {
-		matchType = order.OrderTypeSell
-	} else {
-		matchType = order.OrderTypeBuy
-	}
-
-	orders, err := ou.orderRepositoryInterface.GetPendingOrders(matchType)
+	orders, err := ou.orderRepositoryInterface.GetFirstMatchingOrder(orderEntity)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, o := range orders {
-		if o.UserID == orderEntity.UserID {
-			continue
-		}
-
-		if orderEntity.Price == o.Price && orderEntity.Amount == o.Amount {
-			return o, nil
-		}
-	}
-
-	return nil, nil
+	return orders, nil
 }

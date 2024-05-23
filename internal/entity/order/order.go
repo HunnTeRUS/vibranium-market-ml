@@ -26,9 +26,11 @@ type Order struct {
 
 type OrderRepositoryInterface interface {
 	UpsertOrder(order *Order)
-	GetOrder(orderID string) (*Order, error)
 	GetMemOrder(orderId string) (*Order, bool)
-	GetPendingOrders(orderType int) ([]*Order, error)
+	GetFirstMatchingOrder(orderEntity *Order) (*Order, error)
+
+	LoadSnapshot() error
+	SaveSnapshot() error
 }
 
 type OrderQueueInterface interface {
@@ -36,13 +38,11 @@ type OrderQueueInterface interface {
 	DequeueOrder() (*Order, error)
 }
 
-func (o *Order) CompleteOrder(orderRepositoryInterface OrderRepositoryInterface) error {
+func (o *Order) CompleteOrder(orderRepositoryInterface OrderRepositoryInterface) {
 	o.Status = OrderStatusCompleted
 
 	metrics.OrderProcessed.Inc()
 	orderRepositoryInterface.UpsertOrder(o)
-
-	return nil
 }
 
 func (o *Order) CancelOrder(orderRepositoryInterface OrderRepositoryInterface, reason string) error {

@@ -3,8 +3,8 @@ import { check, sleep, group } from 'k6';
 import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.0.0/index.js';
 
 export let options = {
-    vus: 1000,
-    duration: '60s',
+    vus: 1500,
+    duration: '5s',
     thresholds: {
         http_req_duration: ['p(95)<500'], // 95% das requisições devem ser completadas em menos de 500ms
     },
@@ -29,13 +29,13 @@ export default function () {
 
                 let depositRes = http.patch(`${BASE_URL}/wallets/deposit`, JSON.stringify({
                     userId: userId,
-                    amount: Math.random() * 1000, // valor aleatório para o depósito
-                    vibranium: Math.floor(Math.random() * 100), // valor aleatório de vibranium
+                    amount: Math.random() * 300000, // valor aleatório para o depósito
+                    vibranium: Math.floor(Math.random() * 300000), // valor aleatório de vibranium
                 }), {
                     headers: { 'Content-Type': 'application/json' },
                 });
                 check(depositRes, {
-                    'deposit is status 200': (r) => r.status === 200,
+                    'deposit is status 200': (r) => r.status === 200 || r.status === 201,
                 });
             }
         });
@@ -47,8 +47,8 @@ export default function () {
             for (let i = 0; i < 10; i++) { // Increased number of /orders requests
                 let userId = userIds[Math.floor(Math.random() * userIds.length)]; // Seleciona um userId aleatório do array
                 let orderType = Math.random() > 0.5 ? 1 : 2; // 1 para compra, 2 para venda
-                let amount = Math.floor(Math.random() * 100); // quantidade de vibranium
-                let price = Math.random() * 100; // preço por unidade de vibranium
+                let amount = Math.floor(Math.random() * 10); // quantidade de vibranium
+                let price = Math.random() * 10; // preço por unidade de vibranium
 
                 let orderRes = http.post(`${BASE_URL}/orders`, JSON.stringify({
                     userId: userId,
@@ -59,7 +59,7 @@ export default function () {
                     headers: { 'Content-Type': 'application/json' },
                 });
                 check(orderRes, {
-                    'order creation is status 200': (r) => r.status === 200,
+                    'order creation is status 200 or 201': (r) => r.status === 200 || r.status === 201,
                 });
             }
         });

@@ -5,15 +5,24 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
+	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 )
 
 func (d *Disruptor) SaveSnapshotToFile() error {
+	if len(d.queue) == 0 {
+		return nil
+	}
+
 	snapshotDir := os.Getenv("SNAPSHOT_DIR")
 	if snapshotDir == "" {
-		return errors.New("SNAPSHOT_DIR environment variable is not set")
+		msg := "SNAPSHOT_DIR environment variable is not set"
+
+		logger.Warn(msg)
+		return errors.New(msg)
 	}
 
 	d.mu.Lock()
@@ -21,23 +30,37 @@ func (d *Disruptor) SaveSnapshotToFile() error {
 
 	var buffer bytes.Buffer
 	encoder := gob.NewEncoder(&buffer)
-	err := encoder.Encode(d.buffer)
+
+	var orders []*order.Order
+	for len(d.queue) > 0 {
+		order := <-d.queue
+		orders = append(orders, order)
+	}
+	err := encoder.Encode(orders)
 	if err != nil {
+		logger.Warn(err.Error())
 		return err
 	}
-	err = encoder.Encode(d.writeCursor)
+	err = encoder.Encode(atomic.LoadInt64(&d.writeCursor))
 	if err != nil {
+		logger.Warn(err.Error())
 		return err
 	}
-	err = encoder.Encode(d.readCursor)
+	err = encoder.Encode(atomic.LoadInt64(&d.readCursor))
 	if err != nil {
+		logger.Warn(err.Error())
 		return err
 	}
 
 	snapshotPath := filepath.Join(snapshotDir, fmt.Sprintf("snapshot-%d.gob", atomic.LoadInt64(&d.writeCursor)))
 	err = os.WriteFile(snapshotPath, buffer.Bytes(), 0644)
 	if err != nil {
+		logger.Warn(err.Error())
 		return err
+	}
+
+	for _, order := range orders {
+		d.queue <- order
 	}
 
 	return nil
@@ -54,11 +77,14 @@ func (d *Disruptor) LoadSnapshotFromFile() error {
 
 	entries, err := os.ReadDir(snapshotDir)
 	if err != nil {
+		logger.Warn(err.Error())
 		return err
 	}
 
 	if len(entries) == 0 {
-		return errors.New("no snapshots found in the snapshot directory")
+		msg := "no snapshots found in the snapshot directory"
+		logger.Warn(msg)
+		return errors.New(msg)
 	}
 
 	for _, entry := range entries {
@@ -71,26 +97,33 @@ func (d *Disruptor) LoadSnapshotFromFile() error {
 			defer file.Close()
 
 			decoder := gob.NewDecoder(file)
-			err = decoder.Decode(&d.buffer)
+			var orders []*order.Order
+			err = decoder.Decode(&orders)
 			if err != nil {
 				return err
 			}
-			err = decoder.Decode(&d.writeCursor)
+			var writeCursor, readCursor int64
+			err = decoder.Decode(&writeCursor)
 			if err != nil {
 				return err
 			}
-			err = decoder.Decode(&d.readCursor)
+			err = decoder.Decode(&readCursor)
 			if err != nil {
 				return err
 			}
 
-			if err != nil {
-				return err
+			d.queue = make(chan *order.Order, cap(d.queue))
+			for _, order := range orders {
+				d.queue <- order
 			}
+			atomic.StoreInt64(&d.writeCursor, writeCursor)
+			atomic.StoreInt64(&d.readCursor, readCursor)
 
 			return nil
 		}
 	}
 
-	return errors.New("no available snapshots found in the snapshot directory")
+	msg := "no available snapshots found in the snapshot directory"
+	logger.Warn(msg)
+	return errors.New(msg)
 }

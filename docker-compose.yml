@@ -9,36 +9,42 @@ services:
       - "8080:8080"
     env_file:
       - cmd/market-vibranium/.env
-    depends_on:
-      - db
     command: sh -c "/market-vibranium"
     volumes:
-      - ./snapshots:/snapshots
+      - my-snapshots-volume:/app/snapshots
     networks:
       - localNetwork
+#    deploy:
+#      resources:
+#        limits:
+#          cpus: "12"
+#          memory: 24G
+#        reservations:
+#          cpus: "8"
+#          memory: 16G
 
-  db:
-    image: mysql:8.4.0
-    restart: always
-    env_file:
-      - cmd/market-vibranium/.env
-    ports:
-      - '3306:3306'
-    expose:
-      - '3306'
-    volumes:
-      - my-db:/var/lib/mysql
-      - ./cmd/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
-    command: >
-      --server-id=1
-      --log-bin=master-bin
-      --binlog-format=ROW
-      --innodb_flush_log_at_trx_commit=1
-      --sync_binlog=1
-      --max_connections=10000
-      --innodb_buffer_pool_size=24G
-    networks:
-      - localNetwork
+#  db:
+#    image: mysql:8.4.0
+#    restart: always
+#    env_file:
+#      - cmd/market-vibranium/.env
+#    ports:
+#      - '3306:3306'
+#    expose:
+#      - '3306'
+#    volumes:
+#      - my-db:/var/lib/mysql
+#      - ./cmd/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+#    command: >
+#      --server-id=1
+#      --log-bin=master-bin
+#      --binlog-format=ROW
+#      --innodb_flush_log_at_trx_commit=1
+#      --sync_binlog=1
+#      --max_connections=10000
+#      --innodb_buffer_pool_size=24G
+#    networks:
+#      - localNetwork
 
   prometheus:
     image: prom/prometheus
@@ -65,26 +71,15 @@ services:
     networks:
       - localNetwork
 
-  k6:
-    image: grafana/k6
-    volumes:
-      - ./config/k6:/scripts
-    command: run /scripts/test-script.js
-    networks:
-      - localNetwork
-
-  influxdb:
-    image: influxdb:1.8
-    ports:
-      - "8086:8086"
-    volumes:
-      - influxdb-storage:/var/lib/influxdb
-    environment:
-      - INFLUXDB_DB=k6
-      - INFLUXDB_ADMIN_USER=admin
-      - INFLUXDB_ADMIN_PASSWORD=admin
-    networks:
-      - localNetwork
+#  k6:
+#    image: grafana/k6
+#    volumes:
+#      - ./config/k6:/scripts
+#    depends_on:
+#      - app
+#    command: run /scripts/test-script.js
+#    networks:
+#      - localNetwork
 
 networks:
   localNetwork:
@@ -92,5 +87,4 @@ networks:
 
 volumes:
   grafana-storage:
-  my-db:
-  influxdb-storage:
+  my-snapshots-volume:

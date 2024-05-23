@@ -8,14 +8,10 @@ RUN go mod download
 
 COPY . .
 
-COPY ./cmd/sql/wait-for-it.sh /wait-for-it.sh
-RUN chmod +x /wait-for-it.sh
-
-RUN go build -o /market-vibranium cmd/market-vibranium/main.go
+RUN go build -o /app/market-vibranium cmd/market-vibranium/main.go
 
 EXPOSE 8080
 
-VOLUME /snapshots
+RUN mkdir -p /app/snapshots
 
-ENTRYPOINT ["/wait-for-it.sh", "db:3306", "--"]
-CMD ["./market-vibranium"]
+ENTRYPOINT ["/app/market-vibranium"]

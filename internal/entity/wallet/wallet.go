@@ -56,4 +56,7 @@ type WalletRepositoryInterface interface {
 	DepositToWallet(userID string, amount float64, vibranium int) error
 	GetWallet(userId string) (*Wallet, error)
 	UpdateWallet(wallet *Wallet) error
+
+	SaveSnapshot() error
+	LoadSnapshot() error
 }

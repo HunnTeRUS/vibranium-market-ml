@@ -1,63 +1,80 @@
 package order_repository
 
 import (
-	"database/sql"
-	"errors"
-	"fmt"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
+	"sync"
 )
 
-func (u *OrderRepository) GetOrder(orderID string) (*order.Order, error) {
-	stmt, err := u.dbConnection.Prepare(`SELECT orderId, userId, type, amount, price, status FROM orders WHERE orderId = ?`)
-	if err != nil {
-		return nil, err
-	}
-	defer stmt.Close()
+const priceBucketSize = 10.0
+const amountBucketSize = 10
 
-	row := stmt.QueryRow(orderID)
-
-	var order order.Order
-	err = row.Scan(&order.ID, &order.UserID, &order.Type, &order.Amount, &order.Price, &order.Status)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, errors.New(fmt.Sprintf("order %s not found", orderID))
-		}
-		return nil, err
-	}
-
-	return &order, nil
+func calculateBucket(value, bucketSize float64) int {
+	return int(value / bucketSize)
 }
 
-func (u *OrderRepository) GetPendingOrders(orderType int) ([]*order.Order, error) {
-	stmt, err := u.dbConnection.Prepare("SELECT orderId, userId, type, amount, price, status FROM orders WHERE type = ? AND status = ?")
-	if err != nil {
-		return nil, err
+func (u *OrderRepository) GetFirstMatchingOrder(orderEntity *order.Order) (*order.Order, error) {
+	priceBucket := calculateBucket(orderEntity.Price, priceBucketSize)
+	amountBucket := calculateBucket(float64(orderEntity.Amount), amountBucketSize)
+
+	var cache *sync.Map
+	if orderEntity.Type == order.OrderTypeBuy {
+		cache = u.buyCache
+	} else {
+		cache = u.sellCache
 	}
-	defer stmt.Close()
 
-	rows, err := stmt.Query(orderType, order.OrderStatusPending)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var orders []*order.Order
-	for rows.Next() {
-		var order order.Order
-
-		err := rows.Scan(&order.ID, &order.UserID, &order.Type,
-			&order.Amount, &order.Price, &order.Status)
-		if err != nil {
-			return nil, err
+	cacheKey := (priceBucket << 32) | amountBucket
+	if ordersInterface, ok := cache.Load(cacheKey); ok {
+		if orders, ok := ordersInterface.([]*order.Order); ok && len(orders) > 0 {
+			for _, orderValue := range orders {
+				if orderValue.UserID == orderEntity.UserID {
+					continue
+				}
+				return orderValue, nil
+			}
 		}
-		orders = append(orders, &order)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
+	return nil, nil
+}
+
+func (u *OrderRepository) addOrderToCache(cache *sync.Map, priceBucket, amountBucket int, o *order.Order) {
+	cacheKey := (priceBucket << 32) | amountBucket
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if ordersInterface, ok := cache.Load(cacheKey); ok {
+		if orders, ok := ordersInterface.([]*order.Order); ok {
+			cache.Store(cacheKey, append(orders, o))
+			return
+		}
+	}
+	cache.Store(cacheKey, []*order.Order{o})
+}
+
+func (u *OrderRepository) removeOrderFromCache(orderType int, price float64, amount int, orderID string) {
+	priceBucket := calculateBucket(price, priceBucketSize)
+	amountBucket := calculateBucket(float64(amount), amountBucketSize)
+
+	var cache *sync.Map
+	if orderType == 1 {
+		cache = u.buyCache
+	} else {
+		cache = u.sellCache
 	}
 
-	return orders, nil
+	cacheKey := (priceBucket << 32) | amountBucket
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if ordersInterface, ok := cache.Load(cacheKey); ok {
+		if orders, ok := ordersInterface.([]*order.Order); ok {
+			for i, o := range orders {
+				if o.ID == orderID {
+					cache.Store(cacheKey, append(orders[:i], orders[i+1:]...))
+					return
+				}
+			}
+		}
+	}
 }
 
 func (u *OrderRepository) GetMemOrder(orderId string) (*order.Order, bool) {

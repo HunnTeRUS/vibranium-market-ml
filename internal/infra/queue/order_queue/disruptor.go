@@ -3,22 +3,22 @@ package order_queue
 import (
 	"errors"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
+	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"sync"
-	"sync/atomic"
 )
 
 var ErrBufferFull = errors.New("buffer is full")
 
 type Disruptor struct {
-	buffer      [][]byte
+	queue       chan *order.Order
 	writeCursor int64
 	readCursor  int64
 	mu          sync.Mutex
 }
 
-func NewDisruptor(initialSize int) *Disruptor {
+func NewDisruptor(bufferSize int) *Disruptor {
 	d := &Disruptor{
-		buffer: make([][]byte, initialSize),
+		queue: make(chan *order.Order, bufferSize),
 	}
 
 	err := d.LoadSnapshotFromFile()
@@ -29,39 +29,36 @@ func NewDisruptor(initialSize int) *Disruptor {
 	return d
 }
 
-func (d *Disruptor) Enqueue(value []byte) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	nextWriteCursor := (atomic.LoadInt64(&d.writeCursor) + 1) % int64(len(d.buffer))
-	if nextWriteCursor == atomic.LoadInt64(&d.readCursor) {
-		d.expandBuffer()
+func (d *Disruptor) Enqueue(order *order.Order) error {
+	select {
+	case d.queue <- order:
+		return nil
+	default:
+		return ErrBufferFull
 	}
-
-	seq := atomic.AddInt64(&d.writeCursor, 1) % int64(len(d.buffer))
-	d.buffer[seq] = value
-	return nil
 }
 
-func (d *Disruptor) Dequeue() []byte {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if atomic.LoadInt64(&d.readCursor) == atomic.LoadInt64(&d.writeCursor) {
+func (d *Disruptor) Dequeue() *order.Order {
+	select {
+	case order := <-d.queue:
+		return order
+	default:
 		return nil
 	}
-
-	seq := atomic.AddInt64(&d.readCursor, 1) % int64(len(d.buffer))
-	return d.buffer[seq]
 }
 
-func (d *Disruptor) expandBuffer() {
-	newBufferSize := len(d.buffer) * 2
-	newBuffer := make([][]byte, newBufferSize)
+func (q *OrderQueue) expandBuffer() {
+	newBufferSize := q.bufferSize * 2
+	newQueue := make(chan *order.Order, newBufferSize)
 
-	for i := range d.buffer {
-		newBuffer[i] = d.buffer[i]
+	for {
+		select {
+		case order := <-q.disruptor.queue:
+			newQueue <- order
+		default:
+			q.disruptor.queue = newQueue
+			q.bufferSize = newBufferSize
+			return
+		}
 	}
-
-	d.buffer = newBuffer
 }
