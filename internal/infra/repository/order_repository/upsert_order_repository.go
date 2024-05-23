@@ -2,9 +2,11 @@ package order_repository
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -66,6 +68,7 @@ func (u *OrderRepository) LoadSnapshot() error {
 }
 
 func (u *OrderRepository) SaveSnapshot() error {
+	walletsSnapshotFile := os.Getenv("ORDERS_SNAPSHOT_FILE")
 	u.mu.RLock()
 	defer u.mu.RUnlock()
 
@@ -81,6 +84,13 @@ func (u *OrderRepository) SaveSnapshot() error {
 		return true
 	})
 
+	snapshotDir := filepath.Dir(walletsSnapshotFile)
+	err := os.MkdirAll(snapshotDir, os.ModePerm)
+	if err != nil {
+		fmt.Println("Error creating directory:", err)
+		return err
+	}
+
 	data := struct {
 		Orders    map[string]*order.Order   `json:"orders,omitempty"`
 		BuyCache  map[string][]*order.Order `json:"buy_cache,omitempty"`
@@ -91,7 +101,7 @@ func (u *OrderRepository) SaveSnapshot() error {
 		SellCache: sellCache,
 	}
 
-	file, err := os.Create(os.Getenv("ORDERS_SNAPSHOT_FILE"))
+	file, err := os.Create(walletsSnapshotFile)
 	if err != nil {
 		logger.Warn(err.Error())
 		return err

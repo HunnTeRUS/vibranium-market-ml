@@ -17,7 +17,15 @@ func (d *Disruptor) SaveSnapshotToFile() error {
 		return nil
 	}
 
-	snapshotDir := os.Getenv("SNAPSHOT_DIR")
+	snapshotDirName := os.Getenv("SNAPSHOT_DIR")
+
+	snapshotDir := filepath.Dir(snapshotDirName)
+	err := os.MkdirAll(snapshotDir, os.ModePerm)
+	if err != nil {
+		fmt.Println("Error creating directory:", err)
+		return err
+	}
+
 	if snapshotDir == "" {
 		msg := "SNAPSHOT_DIR environment variable is not set"
 
@@ -36,7 +44,7 @@ func (d *Disruptor) SaveSnapshotToFile() error {
 		order := <-d.queue
 		orders = append(orders, order)
 	}
-	err := encoder.Encode(orders)
+	err = encoder.Encode(orders)
 	if err != nil {
 		logger.Warn(err.Error())
 		return err

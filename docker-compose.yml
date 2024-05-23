@@ -14,37 +14,14 @@ services:
       - my-snapshots-volume:/app/snapshots
     networks:
       - localNetwork
-#    deploy:
-#      resources:
-#        limits:
-#          cpus: "12"
-#          memory: 24G
-#        reservations:
-#          cpus: "8"
-#          memory: 16G
-
-#  db:
-#    image: mysql:8.4.0
-#    restart: always
-#    env_file:
-#      - cmd/market-vibranium/.env
-#    ports:
-#      - '3306:3306'
-#    expose:
-#      - '3306'
-#    volumes:
-#      - my-db:/var/lib/mysql
-#      - ./cmd/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
-#    command: >
-#      --server-id=1
-#      --log-bin=master-bin
-#      --binlog-format=ROW
-#      --innodb_flush_log_at_trx_commit=1
-#      --sync_binlog=1
-#      --max_connections=10000
-#      --innodb_buffer_pool_size=24G
-#    networks:
-#      - localNetwork
+    deploy:
+      resources:
+        limits:
+          cpus: "12"
+          memory: 24G
+        reservations:
+          cpus: "8"
+          memory: 16G
 
   prometheus:
     image: prom/prometheus

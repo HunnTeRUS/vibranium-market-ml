@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -50,6 +51,14 @@ func (wr *WalletRepository) SaveSnapshot() error {
 	}
 
 	walletsSnapshotFile := os.Getenv("WALLETS_SNAPSHOT_FILE")
+
+	snapshotDir := filepath.Dir(walletsSnapshotFile)
+	err := os.MkdirAll(snapshotDir, os.ModePerm)
+	if err != nil {
+		fmt.Println("Error creating directory:", err)
+		return err
+	}
+
 	if walletsSnapshotFile == "" {
 		return fmt.Errorf("environment variable WALLETS_SNAPSHOT_FILE not set")
 	}
