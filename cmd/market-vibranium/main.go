@@ -16,7 +16,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"runtime/pprof"
 	"syscall"
 	"time"
 )
@@ -26,18 +25,6 @@ func main() {
 
 	logger.Info("About to start application")
 	godotenv.Load("cmd/market-vibranium/.env")
-
-	f, err := os.Create("cpu.prof")
-	if err != nil {
-		fmt.Println("could not create CPU profile: ", err)
-		return
-	}
-	defer f.Close()
-	if err := pprof.StartCPUProfile(f); err != nil {
-		fmt.Println("could not start CPU profile: ", err)
-		return
-	}
-	defer pprof.StopCPUProfile()
 
 	walletRepository := wallet_repository.NewWalletRepository()
 	orderQueue := order_queue.NewOrderQueue(20000)
@@ -69,7 +56,7 @@ func main() {
 	go gracefullyShutdown(orderQueue, orderRepository, walletRepository)
 
 	logger.Info("Application up and running")
-	err = r.Run(":8080")
+	err := r.Run(":8080")
 	if err != nil {
 		log.Fatal(err)
 		return

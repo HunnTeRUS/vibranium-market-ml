@@ -2,7 +2,6 @@ package order_queue
 
 import (
 	"errors"
-	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/metrics"
 	"sync"
@@ -21,28 +20,10 @@ func NewOrderQueue(initialSize int) *OrderQueue {
 	}
 }
 
-func (q *OrderQueue) QueueLength() int {
-	return len(q.disruptor.queue)
-}
-
 func (q *OrderQueue) EnqueueOrder(order *order.Order) error {
-	err := q.disruptor.Enqueue(order)
-	if err == ErrBufferFull {
-		metrics.ProcessingErrors.Inc()
-		metrics.BufferFull.Inc()
-		logger.Warn("Buffer is full, expanding buffer and retrying...")
-
-		q.mu.Lock()
-		q.expandBuffer()
-		q.mu.Unlock()
-
-		err = q.disruptor.Enqueue(order)
-		if err != nil {
-			return err
-		}
-	}
 	metrics.OrdersEnqueued.Inc()
-	return nil
+
+	return q.disruptor.Enqueue(order)
 }
 
 func (q *OrderQueue) DequeueOrder() (*order.Order, error) {

@@ -18,19 +18,17 @@ func (d *Disruptor) SaveSnapshotToFile() error {
 	}
 
 	snapshotDirName := os.Getenv("SNAPSHOT_DIR")
+	if snapshotDirName == "" {
+		msg := "SNAPSHOT_DIR environment variable is not set"
+		logger.Warn(msg)
+		return errors.New(msg)
+	}
 
 	snapshotDir := filepath.Dir(snapshotDirName)
 	err := os.MkdirAll(snapshotDir, os.ModePerm)
 	if err != nil {
 		fmt.Println("Error creating directory:", err)
 		return err
-	}
-
-	if snapshotDir == "" {
-		msg := "SNAPSHOT_DIR environment variable is not set"
-
-		logger.Warn(msg)
-		return errors.New(msg)
 	}
 
 	d.mu.Lock()
@@ -60,7 +58,7 @@ func (d *Disruptor) SaveSnapshotToFile() error {
 		return err
 	}
 
-	snapshotPath := filepath.Join(snapshotDir, fmt.Sprintf("snapshot-%d.gob", atomic.LoadInt64(&d.writeCursor)))
+	snapshotPath := filepath.Join(snapshotDirName, fmt.Sprintf("snapshot-%d.gob", atomic.LoadInt64(&d.writeCursor)))
 	err = os.WriteFile(snapshotPath, buffer.Bytes(), 0644)
 	if err != nil {
 		logger.Warn(err.Error())
@@ -77,7 +75,9 @@ func (d *Disruptor) SaveSnapshotToFile() error {
 func (d *Disruptor) LoadSnapshotFromFile() error {
 	snapshotDir := os.Getenv("SNAPSHOT_DIR")
 	if snapshotDir == "" {
-		return errors.New("SNAPSHOT_DIR environment variable is not set")
+		msg := "SNAPSHOT_DIR environment variable is not set"
+		logger.Warn(msg)
+		return errors.New(msg)
 	}
 
 	d.mu.Lock()

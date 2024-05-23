@@ -1,6 +1,9 @@
 package order_usecase
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 func (ou *OrderUsecase) GetOrder(orderID string) (*OrderOutputDTO, error) {
 	if value, exists := ou.orderRepositoryInterface.GetMemOrder(orderID); exists {
@@ -15,5 +18,5 @@ func (ou *OrderUsecase) GetOrder(orderID string) (*OrderOutputDTO, error) {
 		}, nil
 	}
 
-	return nil, errors.New("not found")
+	return nil, errors.New(fmt.Sprintf("order %s not found", orderID))
 }

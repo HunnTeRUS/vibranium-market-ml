@@ -30,12 +30,8 @@ func NewDisruptor(bufferSize int) *Disruptor {
 }
 
 func (d *Disruptor) Enqueue(order *order.Order) error {
-	select {
-	case d.queue <- order:
-		return nil
-	default:
-		return ErrBufferFull
-	}
+	d.queue <- order
+	return nil
 }
 
 func (d *Disruptor) Dequeue() *order.Order {
@@ -44,21 +40,5 @@ func (d *Disruptor) Dequeue() *order.Order {
 		return order
 	default:
 		return nil
-	}
-}
-
-func (q *OrderQueue) expandBuffer() {
-	newBufferSize := q.bufferSize * 2
-	newQueue := make(chan *order.Order, newBufferSize)
-
-	for {
-		select {
-		case order := <-q.disruptor.queue:
-			newQueue <- order
-		default:
-			q.disruptor.queue = newQueue
-			q.bufferSize = newBufferSize
-			return
-		}
 	}
 }

@@ -1,17 +1,17 @@
 package wallet_repository
 
+import (
+	"errors"
+	"fmt"
+)
+
 func (wr *WalletRepository) DepositToWallet(userID string, amount float64, vibranium int) error {
 	if wallet, exists := wr.GetWalletBalance(userID); exists {
 		wallet.Balance += amount
 		wallet.Vibranium += vibranium
 
-		err := wr.UpdateWallet(wallet)
-		if err != nil {
-			return err
-		}
-
-		return nil
+		return wr.UpdateWallet(wallet)
 	}
 
-	return nil
+	return errors.New(fmt.Sprintf("wallet %s not found", userID))
 }
