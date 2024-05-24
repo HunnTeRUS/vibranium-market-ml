@@ -33,8 +33,6 @@ func TestLoadSnapshot(t *testing.T) {
 	err = repo.LoadSnapshot()
 	assert.NoError(t, err)
 
-	repo.RLock()
-	defer repo.RUnlock()
 	assert.Equal(t, wallets, repo.wallets)
 }
 

@@ -14,9 +14,7 @@ func TestUpdateWallet(t *testing.T) {
 	err := repo.UpdateWallet(w)
 	assert.NoError(t, err)
 
-	repo.RLock()
 	updatedWallet, exists := repo.wallets[w.UserID]
-	repo.RUnlock()
 
 	assert.True(t, exists)
 	assert.Equal(t, w, updatedWallet)
@@ -29,9 +27,7 @@ func TestUpdateLocalWalletReference(t *testing.T) {
 	w := &wallet.Wallet{UserID: "user1", Balance: 100.0, Vibranium: 50}
 	repo.UpdateLocalWalletReference(w)
 
-	repo.RLock()
 	updatedWallet, exists := repo.wallets[w.UserID]
-	repo.RUnlock()
 
 	assert.True(t, exists)
 	assert.Equal(t, w, updatedWallet)

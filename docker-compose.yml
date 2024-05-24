@@ -20,8 +20,8 @@ services:
           cpus: "12"
           memory: 24G
         reservations:
-          cpus: "2"
-          memory: 2G
+          cpus: "8"
+          memory: 16G
 
   prometheus:
     image: prom/prometheus
@@ -47,16 +47,6 @@ services:
       - ./provisioning/dashboards_json:/var/lib/grafana/dashboards
     networks:
       - localNetwork
-
-#  k6:
-#    image: grafana/k6
-#    volumes:
-#      - ./config/k6:/scripts
-#    depends_on:
-#      - app
-#    command: run /scripts/test-script.js
-#    networks:
-#      - localNetwork
 
 networks:
   localNetwork:

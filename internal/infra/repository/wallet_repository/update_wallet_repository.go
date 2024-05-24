@@ -11,9 +11,7 @@ func (wr *WalletRepository) UpdateWallet(wallet *wallet.Wallet) error {
 }
 
 func (wr *WalletRepository) UpdateLocalWalletReference(wallet *wallet.Wallet) {
-	wr.Lock()
 	if wallet != nil {
 		wr.wallets[wallet.UserID] = wallet
 	}
-	wr.Unlock()
 }

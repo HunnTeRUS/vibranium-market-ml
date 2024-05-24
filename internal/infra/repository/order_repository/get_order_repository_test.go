@@ -27,7 +27,7 @@ func TestCalculateBucket(t *testing.T) {
 }
 
 func TestGetBuyingMatchingOrder(t *testing.T) {
-	repo := NewOrderRepository()
+	repo := NewOrderRepository(1010)
 
 	orderSell := &order.Order{ID: "orderSell", UserID: "user1", Type: order.OrderTypeSell, Price: 50.0, Amount: 100, SellValueRemaining: 100}
 	orderBuy := &order.Order{ID: "orderBuy", UserID: "user2", Type: order.OrderTypeBuy, Price: 50.0, Amount: 100}
@@ -49,7 +49,7 @@ func TestGetBuyingMatchingOrder(t *testing.T) {
 }
 
 func TestGetSellingMatchingOrder(t *testing.T) {
-	repo := NewOrderRepository()
+	repo := NewOrderRepository(10)
 
 	orderBuy := &order.Order{ID: "orderBuy", UserID: "user1", Type: order.OrderTypeBuy, Price: 50.0, Amount: 100}
 	orderSell := &order.Order{ID: "orderSell", UserID: "user2", Type: order.OrderTypeSell, Price: 50.0, Amount: 100, SellValueRemaining: 100}
@@ -71,21 +71,18 @@ func TestGetSellingMatchingOrder(t *testing.T) {
 }
 
 func TestAddOrderToCache(t *testing.T) {
-	repo := NewOrderRepository()
+	repo := NewOrderRepository(10)
 
 	orderEntity := &order.Order{ID: "order1", UserID: "user1", Type: order.OrderTypeBuy, Price: 50.0, Amount: 100}
 	priceBucket := calculateBucket(orderEntity.Price, priceBucketSize)
 
 	repo.addOrderToCache(&repo.buyCache, priceBucket, orderEntity)
 
-	repo.mu.RLock()
-	defer repo.mu.RUnlock()
-
 	assert.Contains(t, repo.buyCache[priceBucket], orderEntity)
 }
 
 func TestRemoveOrderFromCache(t *testing.T) {
-	repo := NewOrderRepository()
+	repo := NewOrderRepository(10)
 
 	orderEntity := &order.Order{ID: "order1", UserID: "user1", Type: order.OrderTypeBuy, Price: 50.0, Amount: 100}
 	priceBucket := calculateBucket(orderEntity.Price, priceBucketSize)
@@ -93,14 +90,11 @@ func TestRemoveOrderFromCache(t *testing.T) {
 
 	repo.removeOrderFromCache(orderEntity)
 
-	repo.mu.RLock()
-	defer repo.mu.RUnlock()
-
 	assert.NotContains(t, repo.buyCache[priceBucket], orderEntity)
 }
 
 func TestGetMemOrder(t *testing.T) {
-	repo := NewOrderRepository()
+	repo := NewOrderRepository(10)
 
 	orderEntity := &order.Order{ID: "order1", UserID: "user1", Type: order.OrderTypeBuy, Price: 50.0, Amount: 100}
 	repo.UpsertLocalOrder(orderEntity)

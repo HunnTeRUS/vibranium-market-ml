@@ -1,6 +1,7 @@
 package order_usecase
 
 import (
+	"context"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
@@ -33,9 +34,12 @@ type OrderUsecase struct {
 	orderRepositoryInterface  order.OrderRepositoryInterface
 	queueInterface            order.OrderQueueInterface
 	walletRepositoryInterface wallet.WalletRepositoryInterface
+
+	ctx context.Context
 }
 
 func NewOrderUsecase(
+	ctx context.Context,
 	orderRepositoryInterface order.OrderRepositoryInterface,
 	walletRepositoryInterface wallet.WalletRepositoryInterface,
 	queueInterface order.OrderQueueInterface,
@@ -43,29 +47,35 @@ func NewOrderUsecase(
 	orderUsecaseObj := &OrderUsecase{
 		orderRepositoryInterface,
 		queueInterface,
-		walletRepositoryInterface}
+		walletRepositoryInterface,
+		ctx,
+	}
 
 	go orderUsecaseObj.StartOrderProcessingWorker()
 
 	return orderUsecaseObj
 }
+
 func (ou *OrderUsecase) StartOrderProcessingWorker() {
 	for {
-		go func() {
-			orderUnprocessed, err := ou.queueInterface.DequeueOrder()
-			if err != nil || orderUnprocessed == nil {
-				return
-			}
+		select {
+		case <-ou.ctx.Done():
+			return
+		default:
+			go func() {
+				orderUnprocessed, err := ou.queueInterface.DequeueOrder()
+				if err != nil || orderUnprocessed == nil {
+					return
+				}
 
-			metrics.ConcurrentOrdersProcessing.Inc()
-
-			defer metrics.ConcurrentOrdersProcessing.Dec()
-
-			err = ou.ExecuteOrder(orderUnprocessed)
-			if err != nil {
-				logger.Error("action=StartOrderProcessingWorker, message=error trying to process order", err)
-			}
-		}()
+				metrics.ConcurrentOrdersProcessing.Inc()
+				err = ou.ExecuteOrder(orderUnprocessed)
+				if err != nil {
+					logger.Error("action=StartOrderProcessingWorker, message=error trying to process order", err)
+				}
+				metrics.ConcurrentOrdersProcessing.Dec()
+			}()
+		}
 	}
 }
 

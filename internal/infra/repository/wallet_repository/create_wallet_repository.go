@@ -2,12 +2,9 @@ package wallet_repository
 
 import (
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/wallet"
-	"sync"
 )
 
 type WalletRepository struct {
-	sync.RWMutex
-
 	wallets map[string]*wallet.Wallet
 }
 

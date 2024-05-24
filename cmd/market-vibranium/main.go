@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/HunnTeRUS/vibranium-market-ml/config/logger"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/api/web/order_controller"
@@ -14,6 +15,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,16 +23,18 @@ import (
 )
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
 	gin.SetMode(gin.ReleaseMode)
 
 	logger.Info("About to start application")
 	godotenv.Load("cmd/market-vibranium/.env")
 
 	walletRepository := wallet_repository.NewWalletRepository()
-	orderQueue := order_queue.NewOrderQueue(20000)
-	orderRepository := order_repository.NewOrderRepository()
+	orderQueue := order_queue.NewOrderQueue(2000000)
+	orderRepository := order_repository.NewOrderRepository(2000000)
 
 	orderUsecase := order_usecase.NewOrderUsecase(
+		ctx,
 		orderRepository,
 		walletRepository,
 		orderQueue)
@@ -53,7 +57,7 @@ func main() {
 	r.POST("/wallets", walletController.CreateWalletController)
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	go gracefullyShutdown(orderQueue, orderRepository, walletRepository)
+	go gracefullyShutdown(cancel, orderQueue, orderRepository, walletRepository)
 
 	logger.Info("Application up and running")
 	err := r.Run(":8080")
@@ -64,6 +68,7 @@ func main() {
 }
 
 func gracefullyShutdown(
+	cancel context.CancelFunc,
 	orderQueue *order_queue.OrderQueue,
 	orderRepository *order_repository.OrderRepository,
 	walletRepository *wallet_repository.WalletRepository,
@@ -96,5 +101,6 @@ func gracefullyShutdown(
 		return
 	}
 
+	cancel()
 	logger.Info("Snapshot saved successfully.")
 }

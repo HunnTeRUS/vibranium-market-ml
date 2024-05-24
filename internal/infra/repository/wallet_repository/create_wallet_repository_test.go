@@ -21,10 +21,8 @@ func TestCreateWallet(t *testing.T) {
 		err := repo.CreateWallet(w)
 		assert.NoError(t, err)
 
-		repo.RLock()
 		createdWallet, exists := repo.wallets["user1"]
-		repo.RUnlock()
-
+		
 		assert.True(t, exists)
 		assert.Equal(t, w, createdWallet)
 	})
@@ -34,9 +32,7 @@ func TestCreateWallet(t *testing.T) {
 		err := repo.CreateWallet(w)
 		assert.NoError(t, err)
 
-		repo.RLock()
 		createdWallet, exists := repo.wallets["user2"]
-		repo.RUnlock()
 
 		assert.True(t, exists)
 		assert.Equal(t, w, createdWallet)

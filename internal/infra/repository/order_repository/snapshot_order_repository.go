@@ -30,9 +30,6 @@ func (u *OrderRepository) LoadSnapshot() error {
 		return err
 	}
 
-	u.mu.Lock()
-	defer u.mu.Unlock()
-
 	if data.Orders == nil {
 		u.orders = make(map[string]*order.Order, 30000)
 	} else {
@@ -47,8 +44,6 @@ func (u *OrderRepository) LoadSnapshot() error {
 
 func (u *OrderRepository) SaveSnapshot() error {
 	ordersSnapshotFile := os.Getenv("ORDERS_SNAPSHOT_FILE")
-	u.mu.RLock()
-	defer u.mu.RUnlock()
 
 	snapshotDir := filepath.Dir(ordersSnapshotFile)
 	err := os.MkdirAll(snapshotDir, os.ModePerm)

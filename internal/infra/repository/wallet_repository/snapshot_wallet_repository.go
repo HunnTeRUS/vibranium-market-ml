@@ -14,13 +14,11 @@ func (wr *WalletRepository) LoadSnapshot() error {
 	}
 	defer file.Close()
 
-	wr.Lock()
 	decoder := json.NewDecoder(file)
 	err = decoder.Decode(&wr.wallets)
 	if err != nil {
 		return err
 	}
-	wr.Unlock()
 
 	return nil
 }
@@ -42,9 +40,6 @@ func (wr *WalletRepository) SaveSnapshot() error {
 	if walletsSnapshotFile == "" {
 		return fmt.Errorf("environment variable WALLETS_SNAPSHOT_FILE not set")
 	}
-
-	wr.RLock()
-	defer wr.RUnlock()
 
 	file, err := os.Create(walletsSnapshotFile)
 	if err != nil {

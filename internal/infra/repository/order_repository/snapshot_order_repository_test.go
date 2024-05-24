@@ -43,12 +43,10 @@ func TestLoadSnapshot(t *testing.T) {
 	assert.NoError(t, err)
 	tmpFile.Close()
 
-	repo := NewOrderRepository()
+	repo := NewOrderRepository(10)
 	err = repo.LoadSnapshot()
 	assert.NoError(t, err)
 
-	repo.mu.Lock()
-	defer repo.mu.Unlock()
 	assert.Equal(t, orders, repo.orders)
 	assert.Equal(t, buyCache, repo.buyCache)
 	assert.Equal(t, sellCache, repo.sellCache)
@@ -63,7 +61,7 @@ func TestSaveSnapshot(t *testing.T) {
 	os.Setenv("ORDERS_SNAPSHOT_FILE", snapshotFile)
 	defer os.Unsetenv("ORDERS_SNAPSHOT_FILE")
 
-	repo := NewOrderRepository()
+	repo := NewOrderRepository(10)
 	repo.orders["order1"] = &order.Order{ID: "order1", UserID: "user1", Amount: 100, Price: 50.0}
 	repo.orders["order2"] = &order.Order{ID: "order2", UserID: "user2", Amount: 200, Price: 100.0}
 	repo.buyCache[1] = []*order.Order{repo.orders["order1"]}
@@ -98,7 +96,7 @@ func TestSaveSnapshot_EmptyOrders(t *testing.T) {
 	os.Setenv("ORDERS_SNAPSHOT_FILE", snapshotFile)
 	defer os.Unsetenv("ORDERS_SNAPSHOT_FILE")
 
-	repo := NewOrderRepository()
+	repo := NewOrderRepository(10)
 
 	err = repo.SaveSnapshot()
 	assert.NoError(t, err)
@@ -124,7 +122,7 @@ func TestLoadSnapshot_FileNotFound(t *testing.T) {
 	os.Setenv("ORDERS_SNAPSHOT_FILE", "nonexistent_file.json")
 	defer os.Unsetenv("ORDERS_SNAPSHOT_FILE")
 
-	repo := NewOrderRepository()
+	repo := NewOrderRepository(10)
 	err := repo.LoadSnapshot()
 	assert.Error(t, err)
 }
@@ -134,7 +132,7 @@ func TestSaveSnapshot_DirectoryCreationError(t *testing.T) {
 	os.Setenv("ORDERS_SNAPSHOT_FILE", snapshotFile)
 	defer os.Unsetenv("ORDERS_SNAPSHOT_FILE")
 
-	repo := NewOrderRepository()
+	repo := NewOrderRepository(10)
 	repo.orders["order1"] = &order.Order{ID: "order1", UserID: "user1", Amount: 100, Price: 50.0}
 
 	err := repo.SaveSnapshot()

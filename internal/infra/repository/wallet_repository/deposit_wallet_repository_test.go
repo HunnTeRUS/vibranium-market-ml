@@ -22,9 +22,7 @@ func TestDepositToWallet(t *testing.T) {
 		err := repo.DepositToWallet("user1", 50.0, 25)
 		assert.NoError(t, err)
 
-		repo.RLock()
 		updatedWallet, exists := repo.wallets["user1"]
-		repo.RUnlock()
 
 		assert.True(t, exists)
 		assert.Equal(t, 150.0, updatedWallet.Balance)

@@ -4,13 +4,11 @@ import (
 	"errors"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/entity/order"
 	"github.com/HunnTeRUS/vibranium-market-ml/internal/infra/metrics"
-	"sync"
 )
 
 type OrderQueue struct {
 	queue      chan *order.Order
 	disruptor  *Disruptor
-	mu         sync.Mutex
 	bufferSize int
 }
 
